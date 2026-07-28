@@ -1,0 +1,18 @@
+diff --git a/api/users.py b/api/users.py
+index 3f2a1b8..8c4d9e1 100644
+--- a/api/users.py
++++ b/api/users.py
+@@ -10,6 +10,13 @@ def get_db():
+     return sqlite3.connect("app.db")
+
+
++def find_user(username):
++    conn = get_db()
++    cur = conn.cursor()
++    cur.execute("SELECT * FROM users WHERE name = '" + username + "'")
++    return cur.fetchone()
++
++
+ def list_users():
+     conn = get_db()
+     cur = conn.cursor()

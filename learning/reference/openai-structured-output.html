@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference — OpenAI Structured Output</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Reference · 빠른 참조</p>
+<h1>OpenAI Structured Output</h1>
+<p class="subtitle">pydantic 모델 → JSON schema → 강제된 출력. 필요할 때 꺼내 보는 치트시트.</p>
+
+<h2>기본 호출</h2>
+
+<pre><code>from openai import OpenAI
+from pydantic import BaseModel
+
+client = OpenAI()   <span class="c-comment"># OPENAI_API_KEY 환경변수를 자동으로 읽음</span>
+
+class Result(BaseModel):
+    items: list[str]
+
+completion = client.chat.completions.parse(
+    model="gpt-4o-2024-08-06",
+    messages=[
+        {"role": "system", "content": "지시문 — 신뢰하는 쪽"},
+        {"role": "user",   "content": "데이터 — 신뢰 못 하는 쪽"},
+    ],
+    response_format=Result,
+)
+
+msg = completion.choices[0].message
+if msg.parsed:
+    print(msg.parsed.items)
+else:
+    print(msg.refusal)     <span class="c-comment"># 모델이 거부한 경우</span>
+</code></pre>
+
+<h2><code>response_format</code>의 세 단계</h2>
+
+<p>흔한 혼동 — <code>json_object</code>는 "JSON이긴 하다"까지만 보장한다. 스키마는 보장하지 않는다.</p>
+
+<div class="table-scroll">
+<table>
+  <thead><tr><th>값</th><th>보장</th><th>못 하는 것</th></tr></thead>
+  <tbody>
+    <tr><td><code>{"type": "text"}</code><br><span style="color:var(--muted);font-size:.85em">기본값</span></td>
+        <td>없음</td><td>—</td></tr>
+    <tr><td><code>{"type": "json_object"}</code><br><span style="color:var(--muted);font-size:.85em">JSON Mode</span></td>
+        <td>유효한 JSON이라는 것</td>
+        <td>키 이름·타입·구조 전부. 프롬프트에 "JSON"이란 단어가 <strong>반드시</strong> 있어야 함(없으면 API 에러)</td></tr>
+    <tr><td><code>{"type": "json_schema", "strict": true}</code><br><span style="color:var(--muted);font-size:.85em">Structured Outputs — <code>parse()</code>가 쓰는 것</span></td>
+        <td>스키마 구조까지</td>
+        <td>값이 사실인지</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>JSON Mode의 구멍 — 이것도 유효한 JSON이라 통과한다:</p>
+
+<pre><code><span class="c-bad">{"answer": "이 코드에 SQL 인젝션이 있습니다"}</span>
+<span class="c-comment"># findings 배열도, confidence 필드도 없다. 파싱할 때 똑같이 터진다.</span>
+</code></pre>
+
+<p><code>parse()</code>에 pydantic 모델을 넘기면 SDK가 세 번째를 자동으로 조립한다:</p>
+
+<pre><code><span class="c-comment"># 내가 쓰는 것</span>
+response_format=ReviewResult
+
+<span class="c-comment"># SDK가 실제로 보내는 것</span>
+response_format={
+    "type": "json_schema",
+    "json_schema": {
+        "name": "ReviewResult",
+        "strict": True,
+        "schema": { ...ReviewResult를 변환한 JSON schema... }
+    }
+}
+</code></pre>
+
+<h2><code>.content</code> vs <code>.parsed</code></h2>
+
+<p>서버는 여전히 <strong>JSON 문자열</strong>을 보낸다. SDK가 그걸 pydantic 객체로 파싱해 넣어줄 뿐이다.</p>
+
+<pre><code>msg = completion.choices[0].message
+
+msg.content   <span class="c-comment"># '{"findings":[{"severity":"critical",...}]}'  ← 원본 문자열</span>
+msg.parsed    <span class="c-comment"># ReviewResult(findings=[Finding(...)])         ← 파싱된 객체</span>
+msg.refusal   <span class="c-comment"># 모델이 거부한 경우에만 채워짐. parsed 는 None</span>
+</code></pre>
+
+<div class="callout">
+  <span class="label">디버깅</span>
+  <p>
+  <code>.parsed</code>가 이상하면 <code>.content</code>를 봐라. 원본 JSON을 봐야
+  <strong>모델이 이상한 값을 보낸 건지, SDK 파싱이 문제인지</strong>가 갈린다.
+  </p>
+</div>
+
+<h2>pydantic → JSON schema 대응표</h2>
+
+<div class="table-scroll">
+<table>
+  <thead><tr><th>pydantic</th><th>JSON schema</th><th>강제되나</th></tr></thead>
+  <tbody>
+    <tr><td><code>str</code> / <code>int</code> / <code>float</code> / <code>bool</code></td>
+        <td><code>type</code></td><td>예</td></tr>
+    <tr><td><code>Literal["a", "b"]</code></td>
+        <td><code>enum: ["a", "b"]</code></td><td>예</td></tr>
+    <tr><td><code>list[Finding]</code></td>
+        <td><code>array</code> + <code>items</code></td><td>예</td></tr>
+    <tr><td><code>Field(ge=0.0, le=1.0)</code></td>
+        <td><code>minimum</code> / <code>maximum</code></td><td>예</td></tr>
+    <tr><td><code>Field(description="...")</code></td>
+        <td><code>description</code></td><td><strong>아니오</strong> — 모델이 읽고 참고할 뿐</td></tr>
+    <tr><td>중첩 <code>BaseModel</code></td>
+        <td><code>$defs</code> + <code>$ref</code></td><td>예</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>걸리는 제약</h2>
+
+<ul>
+  <li><strong>최상위는 반드시 객체.</strong> <code>list[Finding]</code>을 직접 못 준다 →
+      <code>ReviewResult</code>처럼 한 겹 감싼다.</li>
+  <li><strong>모든 필드가 <code>required</code>.</strong> 선택 필드를 만들려면
+      <code>Optional[X]</code>(= <code>X | None</code>)로 쓰고 모델이 <code>null</code>을 넣게 한다.
+      "안 보내기"는 불가능하다.</li>
+  <li><strong><code>additionalProperties: false</code>가 강제된다.</strong> 스키마에 없는 키는 못 들어온다.</li>
+  <li><strong>지원 모델이 정해져 있다.</strong> <code>gpt-4o-2024-08-06</code> 이후 모델.
+      옛 모델은 <code>json_object</code> 모드까지만 된다(형식만 JSON, 스키마 강제 없음).</li>
+</ul>
+
+<h2>강제되는 것 / 안 되는 것</h2>
+
+<div class="table-scroll">
+<table>
+  <thead><tr><th></th><th>예시</th><th>어떻게 다루나</th></tr></thead>
+  <tbody>
+    <tr><td><strong>형식</strong> — 강제됨</td>
+        <td>타입, enum 값, 숫자 범위, 필드 존재</td>
+        <td>스키마에 쓰면 끝. 위반 불가</td></tr>
+    <tr><td><strong>내용</strong> — 강제 안 됨</td>
+        <td>confidence가 전부 0.9 · line 번호를 지어냄 · rationale이 diff에 없는 코드를 인용</td>
+        <td><code>description</code>으로 유도 + <strong>사후 검증 코드</strong></td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="callout">
+  <span class="label">이 프로젝트에서</span>
+  <p>
+  "내용은 강제 안 됨"이 M6의 애그리게이터 검증(G1)과 M8 게이트가 존재하는 이유다.
+  스키마를 아무리 조여도 <strong>그럴듯하게 틀린 값</strong>은 통과한다.
+  </p>
+</div>
+
+<h2>자주 나는 에러</h2>
+
+<div class="table-scroll">
+<table>
+  <thead><tr><th>에러</th><th>원인</th></tr></thead>
+  <tbody>
+    <tr><td><code>Invalid schema: 'additionalProperties' is required to be false</code></td>
+        <td><code>dict</code>나 자유형 필드를 썼다. 구조를 명시적으로 정의할 것</td></tr>
+    <tr><td><code>root schema must be an object</code></td>
+        <td>최상위에 리스트를 줬다. 감쌀 것</td></tr>
+    <tr><td><code>message.parsed</code>가 <code>None</code></td>
+        <td>모델이 거부했다. <code>message.refusal</code>을 읽을 것</td></tr>
+    <tr><td><code>ValidationError</code> (pydantic)</td>
+        <td>스키마로 못 나가는 제약을 걸었다. 예: <code>min_length</code>는 문자열에서 무시될 수 있음</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="footer">
+  <h3>1차 출처</h3>
+  <p>
+    <a href="https://platform.openai.com/docs/guides/structured-outputs">OpenAI — Structured Outputs</a> ·
+    <a href="https://github.com/openai/openai-python/blob/main/helpers.md">openai-python helpers.md</a> ·
+    <a href="https://docs.pydantic.dev/latest/concepts/fields/">Pydantic Fields</a>
+  </p>
+  <h3>관련</h3>
+  <ul class="next-steps">
+    <li><a href="../lessons/0001-schema-not-prompt.html">Lesson 01 — JSON을 부탁하지 말고 스키마로 강제하라</a></li>
+  </ul>
+</div>
+
+</body>
+</html>

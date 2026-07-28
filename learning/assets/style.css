@@ -1,0 +1,249 @@
+/* 공유 스타일시트 — 모든 레슨이 이걸 링크한다.
+   Tufte 계열: 넉넉한 여백, 한 컬럼, 사이드노트. 인쇄 친화. */
+
+:root {
+  --bg: #fffef9;
+  --fg: #1a1a18;
+  --muted: #6b6b63;
+  --rule: #ddd9cc;
+  --accent: #8a2b1f;
+  --accent-soft: #f5ece9;
+  --code-bg: #f4f2ea;
+  --ok: #2d6a4a;
+  --warn: #8a5a00;
+  --maxw: 46rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16161a;
+    --fg: #e8e6df;
+    --muted: #9b988e;
+    --rule: #33333a;
+    --accent: #e8836f;
+    --accent-soft: #2a1f1d;
+    --code-bg: #1e1e24;
+    --ok: #7bc39a;
+    --warn: #d9a441;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #16161a;
+  --fg: #e8e6df;
+  --muted: #9b988e;
+  --rule: #33333a;
+  --accent: #e8836f;
+  --accent-soft: #2a1f1d;
+  --code-bg: #1e1e24;
+  --ok: #7bc39a;
+  --warn: #d9a441;
+}
+
+:root[data-theme="light"] {
+  --bg: #fffef9;
+  --fg: #1a1a18;
+  --muted: #6b6b63;
+  --rule: #ddd9cc;
+  --accent: #8a2b1f;
+  --accent-soft: #f5ece9;
+  --code-bg: #f4f2ea;
+  --ok: #2d6a4a;
+  --warn: #8a5a00;
+}
+
+html { font-size: 17px; }
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
+               "Apple SD Gothic Neo", "Noto Serif KR", serif;
+  line-height: 1.62;
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 4rem 1.5rem 8rem;
+  text-rendering: optimizeLegibility;
+}
+
+/* ── 헤더 ─────────────────────────────────────── */
+
+.eyebrow {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 0.6rem;
+}
+
+h1 {
+  font-size: 2.1rem;
+  line-height: 1.2;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+  letter-spacing: -0.015em;
+}
+
+.subtitle {
+  font-size: 1.06rem;
+  color: var(--muted);
+  font-style: italic;
+  margin: 0 0 2.5rem;
+  padding-bottom: 1.6rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+h2 {
+  font-size: 1.32rem;
+  font-weight: 600;
+  margin: 3rem 0 0.9rem;
+  letter-spacing: -0.01em;
+}
+
+h3 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 2rem 0 0.6rem;
+}
+
+p { margin: 0 0 1.1rem; }
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+a:hover { border-bottom-color: var(--accent); }
+
+strong { font-weight: 600; }
+
+/* ── 코드 ─────────────────────────────────────── */
+
+code {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  background: var(--code-bg);
+  padding: 0.12em 0.36em;
+  border-radius: 3px;
+}
+
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 1rem 1.1rem;
+  overflow-x: auto;
+  margin: 0 0 1.3rem;
+  line-height: 1.55;
+}
+
+pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.82rem;
+}
+
+.c-comment { color: var(--muted); font-style: italic; }
+.c-bad { color: var(--accent); }
+.c-good { color: var(--ok); }
+
+/* ── 블록 요소 ────────────────────────────────── */
+
+.callout {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  padding: 0.9rem 1.1rem;
+  margin: 0 0 1.4rem;
+  border-radius: 0 4px 4px 0;
+}
+.callout p:last-child { margin-bottom: 0; }
+.callout .label {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  display: block;
+  margin-bottom: 0.4rem;
+}
+
+.keystone {
+  font-size: 1.12rem;
+  line-height: 1.5;
+  text-align: center;
+  padding: 1.6rem 1.2rem;
+  margin: 2rem 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 1.4rem;
+  font-size: 0.92rem;
+}
+th, td {
+  text-align: left;
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+}
+th {
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.table-scroll { overflow-x: auto; margin: 0 0 1.4rem; }
+.table-scroll table { margin-bottom: 0; }
+
+ul, ol { margin: 0 0 1.2rem; padding-left: 1.3rem; }
+li { margin-bottom: 0.4rem; }
+
+/* ── 푸터 ─────────────────────────────────────── */
+
+.footer {
+  margin-top: 4rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+.footer h3 { margin-top: 0; font-size: 0.95rem; color: var(--fg); }
+
+.next-steps { list-style: none; padding: 0; }
+.next-steps li {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+.next-steps li:last-child { border-bottom: none; }
+
+/* ── 인쇄 ─────────────────────────────────────── */
+
+@media print {
+  :root {
+    --bg: #fff; --fg: #000; --muted: #555;
+    --rule: #ccc; --code-bg: #f5f5f5; --accent-soft: #f8f4f3;
+  }
+  body { padding: 0; max-width: none; font-size: 11pt; }
+  pre, .callout, .quiz { break-inside: avoid; }
+  h2, h3 { break-after: avoid; }
+  .quiz-opt { pointer-events: none; }
+  a { border-bottom: none; }
+  a[href^="http"]::after {
+    content: " (" attr(href) ")";
+    font-size: 0.75em;
+    color: #666;
+    word-break: break-all;
+  }
+}
+
+@media (max-width: 640px) {
+  html { font-size: 16px; }
+  body { padding: 2.5rem 1.1rem 5rem; }
+  h1 { font-size: 1.7rem; }
+}

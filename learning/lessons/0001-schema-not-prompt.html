@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 01 — JSON을 부탁하지 말고 스키마로 강제하라</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Lesson 01 · M0 · backend/agents/base.py</p>
+<h1>JSON을 부탁하지 말고,<br>스키마로 강제하라</h1>
+<p class="subtitle">LLM에게 형식을 요청하는 것과, 형식을 강제하는 것은 다른 일이다.</p>
+
+<h2>이 레슨이 주는 것</h2>
+
+<p>
+방금 <code>schema.py</code>에서 <code>Finding</code>과 <code>ReviewResult</code>를 만들었다.
+그런데 그 pydantic 모델이 <strong>LLM에게 어떻게 전달되는지</strong>는 아직 안 봤다.
+이 레슨이 그 연결을 만든다. 끝나면 <code>base.py</code>에서 무슨 일이 일어나는지 알고 시작할 수 있다.
+</p>
+
+<h2>먼저, 부탁이 왜 실패하나</h2>
+
+<p>LLM API를 처음 쓰면 자연스럽게 이렇게 한다:</p>
+
+<pre><code><span class="c-comment"># 이렇게 하지 마라</span>
+prompt = """이 diff를 리뷰하고 JSON으로 답해줘.
+형식: [{"severity": "...", "line": 12, "confidence": 0.9}]"""
+
+resp = client.chat.completions.create(model="...", messages=[...])
+findings = json.loads(resp.choices[0].message.content)  <span class="c-bad"># 💥</span>
+</code></pre>
+
+<p>이게 깨지는 방식이 한두 가지가 아니다:</p>
+
+<div class="table-scroll">
+<table>
+  <thead><tr><th>모델이 보낸 것</th><th>결과</th></tr></thead>
+  <tbody>
+    <tr><td><code>```json\n[...]\n```</code></td><td>코드펜스가 붙어 <code>json.loads</code> 실패</td></tr>
+    <tr><td><code>물론이죠! 리뷰 결과입니다: [...]</code></td><td>인사말이 앞에 붙어 실패</td></tr>
+    <tr><td><code>{"findings": [...]}</code></td><td>배열을 부탁했는데 객체로 감싸서 옴</td></tr>
+    <tr><td><code>"confidence": "high"</code></td><td>숫자를 부탁했는데 문자열이 옴</td></tr>
+    <tr><td><code>"severity": "Critical"</code></td><td>대문자 — 게이트의 <code>== "critical"</code>이 조용히 빗나감</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="callout">
+  <span class="label">핵심</span>
+  <p>
+  프롬프트로 형식을 요청하는 건 <strong>부탁</strong>이다. 모델은 대체로 들어주지만, 100번 중 3번은 안 들어준다.
+  그리고 그 3번이 <em>매번 다른 방식으로</em> 깨진다. 파싱 코드에 <code>try/except</code>를 아무리 붙여도
+  새로운 깨짐이 계속 나온다.
+  </p>
+</div>
+
+<h2>강제하는 방법</h2>
+
+<p>
+OpenAI SDK의 <code>parse()</code>에 pydantic 모델을 넘기면, 부탁이 아니라 <strong>제약</strong>이 된다.
+</p>
+
+<pre><code>from backend.agents.schema import ReviewResult
+
+completion = client.chat.completions.parse(
+    model="gpt-4o-2024-08-06",
+    messages=[...],
+    response_format=ReviewResult,   <span class="c-good"># ← 여기</span>
+)
+
+result = completion.choices[0].message.parsed   <span class="c-good"># ReviewResult 인스턴스</span>
+</code></pre>
+
+<p>이 한 줄에서 세 가지 일이 일어난다:</p>
+
+<ol>
+  <li><strong>SDK가 pydantic 모델을 JSON schema로 변환한다.</strong>
+      <code>Literal["critical", ...]</code>은 <code>enum</code>이 되고, <code>ge=0.0</code>은
+      <code>minimum: 0.0</code>이 된다.</li>
+  <li><strong>서버가 그 스키마를 디코딩 단계에서 강제한다.</strong> 프롬프트로 타이르는 게 아니라,
+      토큰을 생성할 때 스키마에 맞지 않는 토큰의 확률을 0으로 만든다. 그래서 <em>구조적으로</em>
+      틀린 출력이 나올 수 없다.</li>
+  <li><strong>SDK가 응답을 다시 pydantic 모델로 파싱해서 돌려준다.</strong>
+      <code>json.loads</code>도, 코드펜스 벗기기도 없다.</li>
+</ol>
+
+<p class="keystone">
+  프롬프트는 <em>무엇을 쓸지</em>를 말하고,<br>
+  스키마는 <em>무엇을 쓸 수 없는지</em>를 막는다.
+</p>
+
+<h2>그런데 <code>description</code>은 여전히 프롬프트다</h2>
+
+<p>
+여기가 이 레슨에서 가장 중요한 지점이다. 스키마로 변환될 때
+<code>Field(description=...)</code>도 <strong>같이 실려 간다.</strong>
+</p>
+
+<pre><code><span class="c-comment"># schema.py 에서 쓴 것</span>
+confidence: float = Field(ge=0.0, le=1.0, description="이 지적이 사실일 확률...")
+
+<span class="c-comment"># 서버로 가는 JSON schema</span>
+"confidence": {
+  "type": "number",
+  "minimum": 0.0,          <span class="c-good">← 강제됨</span>
+  "maximum": 1.0,          <span class="c-good">← 강제됨</span>
+  "description": "이 지적이 사실일 확률..."   <span class="c-bad">← 모델이 읽는 지시문</span>
+}
+</code></pre>
+
+<p>
+그래서 두 종류가 한 필드에 공존한다. <strong>제약은 물리적으로 막고, description은 설득한다.</strong>
+</p>
+
+<div class="table-scroll">
+<table>
+  <thead><tr><th></th><th>강제되나</th><th>틀리면</th></tr></thead>
+  <tbody>
+    <tr><td><code>type</code>, <code>enum</code>, <code>minimum</code></td>
+        <td><strong>예</strong> — 위반 불가</td><td>애초에 생성이 안 됨</td></tr>
+    <tr><td><code>description</code></td>
+        <td>아니오 — 읽고 참고할 뿐</td><td>그럴듯한 값이 조용히 들어옴</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="callout">
+  <span class="label">이미 겪은 것</span>
+  <p>
+  <code>description="자신감?"</code>이라고 썼을 때 <code>confidence</code>가 전부 0.9로 굳는 이유가 이거다.
+  범위(0~1)는 스키마가 막아주지만, <strong>그 안에서 어떤 값을 고를지는 순전히 description이 결정한다.</strong>
+  M0 완료 판정이 <em>"confidence가 항상 같은 값이면 실패"</em>인 것도 같은 이유다 —
+  그건 형식의 문제가 아니라 내용의 문제라서, 스키마가 잡아줄 수 없다.
+  </p>
+</div>
+
+<h2>우리 코드에 남은 흔적</h2>
+
+<p><code>schema.py</code> 맨 아래를 다시 보자:</p>
+
+<pre><code>class ReviewResult(BaseModel):
+    findings: list[Finding]
+</code></pre>
+
+<p>
+왜 <code>list[Finding]</code>을 그냥 안 쓰고 감쌌을까? <strong>JSON schema의 최상위는 객체여야 하기 때문이다.</strong>
+배열을 최상위로 주면 API가 거부한다. 그래서 리스트를 반환하고 싶으면 항상 한 겹 감싸야 한다.
+이건 우리 설계 취향이 아니라 규격이다.
+</p>
+
+<h2>회상 연습</h2>
+
+<div class="quiz" data-answer="2">
+  <p class="quiz-q"><code>parse()</code>에 pydantic 모델을 넘기면 무엇이 보장되나?</p>
+  <ol class="quiz-opts">
+    <li data-fb="스키마는 형식만 본다. 값이 사실인지는 판단하지 않는다.">응답 필드 값이 사실과 부합한다</li>
+    <li data-fb="타입·enum·범위가 디코딩 단계에서 강제되므로 구조적으로 틀린 출력이 나올 수 없다.">응답 구조가 스키마와 일치한다</li>
+    <li data-fb="LLM은 같은 입력에도 다른 답을 낸다. 스키마는 그걸 막지 않는다.">응답 내용이 매번 동일하게 온다</li>
+    <li data-fb="스키마와 응답 속도는 무관하다. 오히려 제약이 많으면 느려질 수 있다.">응답 속도가 일정하게 유지된다</li>
+  </ol>
+</div>
+
+<div class="quiz" data-answer="2">
+  <p class="quiz-q"><code>Field(description=...)</code>에 쓴 문장은 어디로 가나?</p>
+  <ol class="quiz-opts">
+    <li data-fb="파이썬 주석과 달리 description은 실제로 전송된다.">코드에만 남고 전송되지 않는다</li>
+    <li data-fb="JSON schema에 실려 모델이 읽는다. 그래서 사실상 프롬프트의 일부다.">스키마에 실려 모델에 전달된다</li>
+    <li data-fb="헤더가 아니라 요청 본문의 스키마 안에 들어간다.">헤더에 붙어 서버에 기록된다</li>
+    <li data-fb="응답에는 값만 온다. description은 요청 방향으로만 간다.">응답에 그대로 복사돼 돌아온다</li>
+  </ol>
+</div>
+
+<h2>여기서 이어지는 것</h2>
+
+<p>
+스키마가 <strong>형식은 보장하지만 내용은 보장하지 않는다</strong>는 사실이, 이 프로젝트 후반부의 설계를 통째로 결정한다.
+</p>
+
+<ul>
+  <li><strong>M0 완료 판정</strong> — confidence가 분포하는지 눈으로 확인해야 하는 이유</li>
+  <li><strong>M6 애그리게이터</strong> — rationale이 인용한 코드가 실제 diff 안에 있는지 문자열로 대조
+      (<code>docs/04-book-reading-plan.md</code>의 G1)</li>
+  <li><strong>M8 게이트</strong> — 형식이 맞는 finding도 틀릴 수 있으니, 확신이 낮으면 사람에게 넘긴다.
+      이 시스템의 존재 이유가 정확히 여기다</li>
+</ul>
+
+<div class="footer">
+  <h3>1차 출처</h3>
+  <p>
+    <a href="https://platform.openai.com/docs/guides/structured-outputs">OpenAI — Structured Outputs 가이드</a><br>
+    특히 <em>"Supported schemas"</em> 절을 볼 것. 모든 필드가 <code>required</code>여야 하고
+    <code>additionalProperties: false</code>가 강제된다는 제약이 나중에 걸린다.
+  </p>
+  <p>
+    SDK 쪽 1차 출처는
+    <a href="https://github.com/openai/openai-python/blob/main/helpers.md">openai-python <code>helpers.md</code></a>.
+    <code>message.parsed</code>가 <code>None</code>일 때 <code>message.refusal</code>을 봐야 한다는 것도 여기 있다.
+  </p>
+
+  <h3>다음</h3>
+  <ul class="next-steps">
+    <li><strong>Lesson 02</strong> — PR diff는 신뢰할 수 없는 입력이다 (프롬프트 인젝션과 트러스트 바운더리)</li>
+    <li><a href="../reference/openai-structured-output.html">Reference — Structured Output 치트시트</a></li>
+    <li><a href="../MISSION.md">MISSION.md</a> · <a href="../RESOURCES.md">RESOURCES.md</a></li>
+  </ul>
+
+  <p style="margin-top:1.5rem">
+    막히거나 애매한 부분이 있으면 <strong>그대로 물어보면 된다.</strong>
+    이 레슨을 쓴 에이전트가 선생이다 — "왜 이게 이렇게 되지?" 같은 질문이 가장 값싸고 빠른 경로다.
+  </p>
+</div>
+
+<script src="../assets/quiz.js"></script>
+</body>
+</html>
