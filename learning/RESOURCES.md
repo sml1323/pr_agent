@@ -26,6 +26,16 @@
   `X-Hub-Signature-256` · HMAC-SHA256 · **raw payload**에 서명 · timing-safe 비교 요구. 파이썬 예제 포함.
   Use for: M1 `webhook/security.py`의 확정 출처. ⚠️ 공식 예제는 불일치에 **403**을 쓰는데 우리 INV-1은 **400** — 의도된 차이.
 
+- [GitHub Docs — Handling failed webhook deliveries](https://docs.github.com/en/webhooks/using-webhooks/handling-failed-webhook-deliveries)
+  **"GitHub does not automatically redeliver failed webhook deliveries."** 실패 판정은
+  "서버가 죽었거나 **10초** 넘게 응답하지 않을 때". 수동 재배달 방법도 여기.
+  Use for: INV-2의 실제 근거. ⚠️ 영상의 "GitHub이 재시도한다"는 전제를 정정한 출처다.
+  그리고 [00:03:06] vs [01:31:39]로 흔들리던 ack 시간을 **10초로 확정**해준다.
+
+- [GitHub REST API — Repository webhooks](https://docs.github.com/en/rest/repos/webhooks)
+  delivery 객체의 `id`(시도) / `guid`(이벤트) / `redelivery` 필드.
+  Use for: 멱등키를 무엇으로 잡을지, API로 재배달을 쏘는 법.
+
 - [Python 표준 라이브러리 — `hmac`](https://docs.python.org/3/library/hmac.html)
   `hmac.new()` · `compare_digest()`. 의존성 추가 불필요.
   Use for: 서명 계산과 타이밍 안전 비교의 시그니처.
@@ -51,8 +61,9 @@
 
 - **애그리게이터 병합 규칙의 1차 출처가 없음** — 영상이 "overall confidence를 계산한다"고만 하고 공식을 안 준다.
   G6 결정 시점(M5 직전)에 찾아야 함. 없으면 우리가 정하고 ADR로 남긴다.
-- **재배달 시 `X-GitHub-Delivery` GUID가 유지되는지에 대한 1차 출처가 없음** — 공식 문서 세 곳
-  (validating deliveries · webhook events and payloads · redelivering webhooks)에 명시 문장이 없다.
-  **INV-2 멱등성이 여기 걸려 있다.** M1에서 실제 재배달을 쏴서 관측으로 메울 것. [Lesson 03](lessons/0003-signature-over-bytes.html)
+- **재배달 시 `guid`가 유지되는지에 대한 명시 문장이 여전히 없음** — 공식 문서 다섯 곳을 봤다.
+  다만 delivery 객체가 `id`(시도)와 `guid`(이벤트)를 나눠 갖고 `redelivery` 플래그가 따로 있다는
+  **구조적 근거**는 확보했다. 추측을 사실로 승격시키지 말 것 — M1 끝나고 실제 재배달로 관측한다.
+  [Lesson 04](lessons/0004-same-delivery-twice.html)
 
 - **confidence 캘리브레이션** — LLM이 뱉는 확신도가 실제 정확도와 맞는지 재는 방법. M11이 범위 밖이라 지금은 공백으로 둔다.

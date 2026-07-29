@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference — 웹훅 인그레스 치트시트</title>
+<link rel="stylesheet" href="../assets/style.css">
+<style>
+  .sim {
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 1.2rem;
+    margin: 1.5rem 0;
+    background: color-mix(in srgb, var(--code-bg) 40%, transparent);
+  }
+  .sim-controls { display: flex; flex-wrap: wrap; gap: 1.4rem; margin-bottom: 1.2rem; }
+  .sim-controls fieldset { border: none; margin: 0; padding: 0; }
+  .sim-controls legend {
+    font-family: ui-monospace, Menlo, monospace; font-size: 0.64rem;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+    margin-bottom: 0.4rem; padding: 0;
+  }
+  .sim-controls label {
+    display: block; font-size: 0.86rem; cursor: pointer; line-height: 1.9;
+  }
+  .sim-controls input { margin-right: 0.4rem; accent-color: var(--accent); }
+
+  .pipe { list-style: none; margin: 0; padding: 0; counter-reset: g; }
+  .pipe li {
+    position: relative; padding: 0.55rem 0.7rem 0.55rem 2.6rem;
+    border-left: 2px solid var(--rule); margin: 0;
+    font-size: 0.9rem; transition: all .15s;
+  }
+  .pipe li::before {
+    content: counter(g); counter-increment: g;
+    position: absolute; left: 0.75rem; top: 0.62rem;
+    width: 1.1rem; height: 1.1rem; border-radius: 50%;
+    background: var(--rule); color: var(--bg);
+    font-family: ui-monospace, Menlo, monospace; font-size: 0.66rem;
+    display: flex; align-items: center; justify-content: center; font-weight: 700;
+  }
+  .pipe li.pass { border-left-color: var(--ok); }
+  .pipe li.pass::before { background: var(--ok); }
+  .pipe li.stop {
+    border-left-color: var(--accent);
+    background: var(--accent-soft);
+    border-radius: 0 4px 4px 0;
+  }
+  .pipe li.stop::before { background: var(--accent); }
+  .pipe li.skip { opacity: 0.34; }
+  .pipe .why {
+    display: block; font-size: 0.78rem; color: var(--muted); margin-top: 0.15rem;
+  }
+  .pipe li.stop .why { color: var(--accent); }
+
+  .verdict {
+    margin-top: 1rem; padding-top: 0.9rem; border-top: 1px solid var(--rule);
+    display: flex; gap: 1.6rem; align-items: baseline; flex-wrap: wrap;
+  }
+  .verdict b {
+    font-family: ui-monospace, Menlo, monospace; font-size: 1.5rem;
+  }
+  .verdict .lbl {
+    font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); display: block;
+  }
+</style>
+</head>
+<body>
+
+<p class="eyebrow">Reference · M1 · backend/webhook/</p>
+<h1>웹훅 인그레스<br>치트시트</h1>
+<p class="subtitle">요청 하나가 통과해야 하는 관문 다섯 개. 아래에서 직접 돌려볼 수 있다.</p>
+
+<h2>시뮬레이터</h2>
+
+<p>요청의 성질을 바꿔가며 <strong>어느 관문에서 멈추는지</strong> 본다.</p>
+
+<div class="sim">
+  <div class="sim-controls">
+    <fieldset>
+      <legend>서명</legend>
+      <label><input type="radio" name="sig" value="valid" checked> 올바름</label>
+      <label><input type="radio" name="sig" value="wrong"> 틀림</label>
+      <label><input type="radio" name="sig" value="none"> 헤더 없음</label>
+    </fieldset>
+    <fieldset>
+      <legend>이벤트</legend>
+      <label><input type="radio" name="ev" value="pull_request" checked> pull_request</label>
+      <label><input type="radio" name="ev" value="ping"> ping</label>
+      <label><input type="radio" name="ev" value="push"> push</label>
+    </fieldset>
+    <fieldset>
+      <legend>본문</legend>
+      <label><input type="radio" name="body" value="ok" checked> 정상 JSON</label>
+      <label><input type="radio" name="body" value="broken"> 깨진 JSON</label>
+      <label><input type="radio" name="body" value="space"> 공백 1개 추가</label>
+    </fieldset>
+    <fieldset>
+      <legend>배달 ID</legend>
+      <label><input type="radio" name="dlv" value="new" checked> 처음 보는 값</label>
+      <label><input type="radio" name="dlv" value="repeat"> 아까 그 값</label>
+      <label><input type="radio" name="dlv" value="none"> 헤더 없음</label>
+    </fieldset>
+  </div>
+
+  <ol class="pipe" id="pipe">
+    <li data-g="body"><code>body = await request.body()</code>
+      <span class="why">원본 바이트. 파싱 전에 붙잡아 검증·파싱 둘 다에 쓴다</span></li>
+    <li data-g="sig"><code>verify_signature(body, signature)</code>
+      <span class="why">출처 증명. 실패는 이유와 무관하게 같은 400 (INV-1)</span></li>
+    <li data-g="ev"><code>event != HANDLED_EVENT</code>
+      <span class="why">관심 없는 이벤트. 에러가 아니므로 정상 응답</span></li>
+    <li data-g="json"><code>json.loads(body)</code>
+      <span class="why">인증된 호출자의 깨진 본문 = 클라이언트 잘못(400), 500 아님</span></li>
+    <li data-g="dup"><code>is_duplicate(delivery_id)</code>
+      <span class="why">이미 본 배달이면 큐에 넣지 않는다 (INV-2)</span></li>
+    <li data-g="enq"><code>enqueue(payload)</code> → <code>200</code>
+      <span class="why">10초 안에 답한다. 리뷰는 워커가 나중에</span></li>
+  </ol>
+
+  <div class="verdict">
+    <div><span class="lbl">응답</span><b id="v-code">200</b></div>
+    <div><span class="lbl">큐에 들어가나</span><b id="v-queue">예</b></div>
+    <div style="flex:1 1 14rem"><span class="lbl">멈춘 이유</span><span id="v-why">—</span></div>
+  </div>
+</div>
+
+<h2>응답 코드 표</h2>
+
+<div class="table-scroll">
+<table>
+  <tr><th>상황</th><th>코드</th><th>왜</th></tr>
+  <tr><td>서명 불일치 · 헤더 없음</td><td><code>400</code></td>
+      <td>이유별로 나누면 공격자가 어디까지 맞췄는지 알게 된다</td></tr>
+  <tr><td>서명 통과 + 깨진 본문</td><td><code>400</code></td>
+      <td>인증된 호출자의 잘못된 입력. 500이면 헛경보가 뜬다</td></tr>
+  <tr><td>관심 없는 이벤트 (<code>ping</code>)</td><td><code>200</code></td>
+      <td>4xx를 주면 GitHub UI에 빨간 X가 붙는다</td></tr>
+  <tr><td>중복 배달</td><td><code>200</code></td>
+      <td>GitHub 입장에선 성공. 단 큐에는 안 넣는다</td></tr>
+  <tr><td>정상 처리</td><td><code>200</code></td>
+      <td>영상이 두 번 명시 [01:28:30] [01:31:39]. 202도 방어 가능</td></tr>
+</table>
+</div>
+
+<h2>외워둘 사실</h2>
+
+<div class="table-scroll">
+<table>
+  <tr><th></th><th>값</th><th>출처</th></tr>
+  <tr><td>서명 헤더</td><td><code>X-Hub-Signature-256</code></td><td rowspan="2">GitHub Docs</td></tr>
+  <tr><td>알고리즘</td><td>HMAC-SHA256, <strong>raw body</strong>에 대해</td></tr>
+  <tr><td>헤더 형식</td><td><code>sha256=</code> + 64자 hex</td><td></td></tr>
+  <tr><td>배달 ID 헤더</td><td><code>X-GitHub-Delivery</code></td><td></td></tr>
+  <tr><td>이벤트 헤더</td><td><code>X-GitHub-Event</code></td><td></td></tr>
+  <tr><td><strong>응답 제한시간</strong></td><td><strong>10초</strong></td><td>Handling failed deliveries</td></tr>
+  <tr><td><strong>자동 재시도</strong></td><td><strong>없음</strong> — 늦으면 영구 유실</td><td>같은 문서</td></tr>
+</table>
+</div>
+
+<h2>깨지는 자리 4개</h2>
+
+<pre><code><span class="c-bad">✗</span> await request.json() 후 json.dumps()   바이트가 달라져 서명이 영원히 불일치
+<span class="c-bad">✗</span> == 로 서명 비교                        타이밍 공격. 테스트로는 안 잡힘
+<span class="c-bad">✗</span> if x in seen: ... seen.add(x)         확인·기록 사이에 같은 배달이 낀다
+<span class="c-bad">✗</span> os.getenv("SECRET", "default")        설정 누락이 조용히 묻힌다</code></pre>
+
+<div class="footer">
+  <h3>관련</h3>
+  <ul class="next-steps">
+    <li><a href="../lessons/0003-signature-over-bytes.html">Lesson 03 — 서명은 바이트에 대한 것이다</a></li>
+    <li><a href="../lessons/0004-same-delivery-twice.html">Lesson 04 — 같은 배달이 두 번 왔을 때</a></li>
+    <li><a href="https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries">GitHub Docs — Validating webhook deliveries</a></li>
+    <li><a href="https://docs.github.com/en/webhooks/using-webhooks/handling-failed-webhook-deliveries">GitHub Docs — Handling failed webhook deliveries</a></li>
+  </ul>
+</div>
+
+<script>
+(function () {
+  const pipe = document.getElementById('pipe');
+  const items = [...pipe.querySelectorAll('li')];
+  const vCode = document.getElementById('v-code');
+  const vQueue = document.getElementById('v-queue');
+  const vWhy = document.getElementById('v-why');
+
+  function pick(name) {
+    return document.querySelector(`input[name="${name}"]:checked`).value;
+  }
+
+  function evaluate() {
+    const sig = pick('sig'), ev = pick('ev'), body = pick('body'), dlv = pick('dlv');
+
+    // 어느 가드에서 멈추나 — app.py 의 순서 그대로다
+    let stopAt = null, code = 200, queued = true, why = '끝까지 통과했다';
+
+    if (sig !== 'valid' || body === 'space') {
+      stopAt = 'sig'; code = 400; queued = false;
+      why = body === 'space' && sig === 'valid'
+        ? '서명은 그 body 로 만든 게 아니다 — 공백 하나가 다른 문서를 만든다'
+        : (sig === 'none' ? '서명 헤더가 없다' : '서명이 맞지 않는다');
+    } else if (ev !== 'pull_request') {
+      stopAt = 'ev'; code = 200; queued = false;
+      why = `${ev} 는 우리가 처리하지 않는 이벤트다. 에러는 아니다`;
+    } else if (body === 'broken') {
+      stopAt = 'json'; code = 400; queued = false;
+      why = '인증된 호출자가 보낸 깨진 본문 — 500 이 아니라 400';
+    } else if (dlv === 'repeat') {
+      stopAt = 'dup'; code = 200; queued = false;
+      why = '이미 처리한 배달이다. 응답은 성공이지만 큐에는 안 넣는다';
+    } else if (dlv === 'none') {
+      why = '배달 ID 가 없어 중복 판단 불가 — 통과시킨다(의도된 선택)';
+    }
+
+    let reached = true;
+    for (const li of items) {
+      li.classList.remove('pass', 'stop', 'skip');
+      if (!reached) { li.classList.add('skip'); continue; }
+      if (li.dataset.g === stopAt) { li.classList.add('stop'); reached = false; }
+      else li.classList.add('pass');
+    }
+
+    vCode.textContent = code;
+    vCode.style.color = code === 200 ? 'var(--ok)' : 'var(--accent)';
+    vQueue.textContent = queued ? '예' : '아니오';
+    vQueue.style.color = queued ? 'var(--ok)' : 'var(--muted)';
+    vWhy.textContent = why;
+  }
+
+  document.querySelectorAll('.sim-controls input').forEach(el =>
+    el.addEventListener('change', evaluate));
+  evaluate();
+})();
+</script>
+</body>
+</html>

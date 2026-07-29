@@ -17,6 +17,7 @@ import json
 
 from fastapi import APIRouter, Request, Response
 
+from ..queue.router import enqueue, is_duplicate
 from .security import SIGNATURE_HEADER, verify_signature
 
 router = APIRouter()
@@ -33,29 +34,17 @@ HANDLED_EVENT = "pull_request"
 
 
 # ─────────────────────────────────────────────────────────────────────
-# TODO(human) ① 응답 계약 — 세 가지 결과에 각각 몇 번을 줄 것인가
+# 응답 계약 — 세 결과에 각각 무엇을 돌려주나
 #
-# 아래 상수 세 개를 정하는 일이다. 숫자만 고르는 게 아니라 "왜 그 숫자인가"가
-# 답이어야 한다. Lesson 03 함정 ③을 읽었으면 재료는 다 있다.
+#   OK        큐에 넣었다. 영상이 두 번 명시한 200 을 따랐다 [01:28:30] [01:31:39].
+#             202(Accepted)가 의미상 더 정확하지만, 하나로 고정하는 게 우선이다.
+#   REJECTED  서명 불일치 / 헤더 없음 / 깨진 본문 — 이유와 무관하게 같은 400 (INV-1).
+#             이유별로 코드를 나누면 공격자가 응답만 보고 어디까지 맞췄는지 알게 된다.
+#   IGNORED   pull_request 가 아닌 이벤트. 에러가 아니다 —
+#             웹훅 등록 직후 오는 ping 에 4xx 를 주면 GitHub UI 에 빨간 X 가 붙는다.
 #
-#   OK        큐에 넣는 데 성공했다.
-#             영상은 200 을 두 번 명시했다 [01:28:30] [01:31:39].
-#             의미상으로는 202(Accepted, "받았고 나중에 처리함")가 더 정확하다.
-#             어느 쪽이든 **하나로 고정하고 그 선택을 적어둘 것.**
-#
-#   REJECTED  서명이 틀렸다 / 헤더가 없다 / 본문이 깨졌다.
-#             GitHub 공식 예제는 403, 우리 INV-1은 "이유와 무관하게 항상 같은 400".
-#             왜 획일화하는지 말할 수 있어야 한다.
-#
-#   IGNORED   pull_request 가 아닌 이벤트(ping, push, issues...).
-#             이건 아직 아무도 안 가르쳐준 판단이다. 힌트:
-#             웹훅을 처음 등록하면 GitHub 이 제일 먼저 ping 을 쏜다.
-#             거기에 4xx 를 주면 GitHub UI 의 그 웹훅에 빨간 X 가 붙는다.
-#             "우리가 안 쓰는 이벤트"는 **에러인가, 정상인가?**
-#
-# 틀리면:
-#   IGNORED 를 4xx 로 두면 웹훅이 고장 난 것처럼 보인다. 실제로는 멀쩡한데
-#   그 표시를 보고 설정을 뒤지게 된다 — 시간을 태우는 종류의 거짓 신호다.
+# OK 와 IGNORED 가 같은 200 인데도 상수를 나눈 이유: M3에서 로깅이 붙으면
+# "큐에 넣음"과 "관심 없어 버림"은 구분해서 남겨야 하는 다른 사건이다.
 # ─────────────────────────────────────────────────────────────────────
 STATUS_OK = 200
 STATUS_REJECTED = 400
@@ -70,40 +59,6 @@ async def receive_webhook(request: Request) -> Response:
     (영상 두 수치: [00:03:06] ~10초 / [01:31:39] ~10-12초, 화자가 불확실하다고 밝힘)
     전체 리뷰는 30~90초가 걸린다. 이건 취향이 아니라 외부 제약이다.
     """
-    # ─────────────────────────────────────────────────────────────────
-    # TODO(human) ② 핸들러 본문
-    #
-    # 재료:
-    #   await request.body()          → raw bytes (파싱 전!)
-    #   request.headers.get(이름)      → 헤더 값 또는 None
-    #   verify_signature(body, sig)   → bool
-    #   json.loads(body)              → dict, 실패 시 json.JSONDecodeError
-    #   Response(status_code=...)     → 본문 없는 응답
-    #
-    # 순서는 Lesson 03에서 다뤘다. 손으로 다시 세워볼 것 —
-    # 무엇이 무엇보다 반드시 먼저여야 하는지, 그 이유와 함께.
-    #
-    # 판단 두 개:
-    #   (a) 이벤트 필터를 서명 검증 **앞**에 둘 것인가 뒤에 둘 것인가.
-    #       영상이 두 군데서 다르게 말한다(03-build-plan.md M1 절에 기록).
-    #       X-GitHub-Event 는 헤더라 body 를 안 건드리고도 읽을 수 있다 —
-    #       그래서 실제 위험은 작다. 그럼에도 기본값을 하나로 정해야 한다.
-    #
-    #   (b) json.loads 가 터지는 경우.
-    #       여기가 M1의 진짜 체크포인트다. 영상에서 빌더는 완료를 선언했고
-    #       독립 검증자가 이 자리에서 500 크래시를 잡아냈다 [02:38:39].
-    #       예외를 잡지 않으면 FastAPI 가 알아서 처리해버린다 — 즉 우리 통제 밖이다.
-    #
-    # 아직 안 하는 것:
-    #   enqueue 는 M1 (3/3)에서 queue/router.py 가 생기면 붙는다.
-    #   지금은 파싱까지 성공하면 STATUS_OK 를 돌려주면 된다.
-    #   DELIVERY_HEADER 는 읽어만 두고 쓰지 않아도 된다(다음 파트의 재료).
-    #
-    # 틀리면:
-    #   순서를 뒤집으면 "서명을 안 본 요청"에 파싱 로직이 먼저 도는 표면이 생긴다.
-    #   (b)를 빠뜨리면 깨진 body 하나로 500 이 뜨고, 서버 모니터링에 헛경보가 쌓인다.
-    # ─────────────────────────────────────────────────────────────────
-
     # 1. 원본 바이트를 먼저 잡는다. 이 값 하나를 검증에도 파싱에도 쓴다.
     body = await request.body()
     # 2. 헤더를 꺼낸다. get() 에 넣는 건 헤더 '이름'이다.
@@ -126,9 +81,35 @@ async def receive_webhook(request: Request) -> Response:
     except json.JSONDecodeError:
         return Response(status_code=STATUS_REJECTED)
 
-    # 6. 여기까지 오면 진짜다. M1 (3/3)에서 이 자리에 enqueue(payload) 가 붙는다.
-    #    지금 payload 는 "파싱 가능한가"를 확인하려고 만들었을 뿐 쓰이지 않는다.
-    _ = payload
+    # ─────────────────────────────────────────────────────────────────
+    # TODO(human) ② 멱등성 + enqueue 배선
+    #
+    # 재료:  request.headers.get(DELIVERY_HEADER)  ·  is_duplicate(...)  ·  enqueue(payload)
+    #
+    # 판단: 중복이었을 때 **몇 번을 돌려줄 것인가.**
+    #   같은 배달을 또 받았다 = 우리가 이미 처리했다 = GitHub 입장에선 성공한 배달이다.
+    #   여기서 4xx 를 주면 GitHub 의 전달 기록에 실패로 남고, 멀쩡한 웹훅이 고장 나 보인다.
+    #   그런데 "큐에 새로 넣었다"와 "중복이라 버렸다"는 우리에겐 분명 다른 사건이다.
+    #   같은 숫자를 써도 되나? 된다면 왜 되나?
+    #
+    # 순서 판단 하나 더: dedup 검사가 파싱보다 앞인가 뒤인가.
+    #   앞에 두면 깨진 body 도 "봤다"로 기록된다 — 재배달로 고쳐 보낼 기회가 사라진다.
+    #   뒤에 두면 파싱 비용을 중복에도 매번 치른다.
+    #   지금 payload 크기(수십 KB)와 10초 예산을 놓고 어느 쪽이 나은가.
+    #
+    # 틀리면:
+    #   중복에 4xx 를 주면 GitHub UI 가 빨간 X 로 덮인다.
+    #   dedup 을 아예 빼면 같은 PR 에 리뷰 코멘트가 두 번 붙는다 — INV-2 위반이다.
+    # ─────────────────────────────────────────────────────────────────
+    delivery_id = request.headers.get(DELIVERY_HEADER)
+
+    # 이미 처리한 배달. GitHub 입장에선 성공한 배달이므로 실패로 남기지 않는다.
+    # OK 가 아니라 IGNORED 인 건 "큐에 넣음"과 "받았지만 아무것도 안 함"이
+    # 다른 사건이기 때문 — 값은 같아도 M3 로깅에서 갈린다.
+    if is_duplicate(delivery_id):
+        return Response(status_code=STATUS_IGNORED)
+
+    enqueue(payload)
     return Response(status_code=STATUS_OK)
 
 
