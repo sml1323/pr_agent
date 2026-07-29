@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 03 — 서명은 바이트에 대한 것이다</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Lesson 03 · M1 · backend/webhook/security.py</p>
+<h1>서명은<br>바이트에 대한 것이다</h1>
+<p class="subtitle">같은 뜻의 JSON 두 개는 서로 다른 서명을 갖는다. 이 한 문장이 M1의 첫 함정 전부다.</p>
+
+<h2>이 레슨이 주는 것</h2>
+
+<p>
+<a href="0002-untrusted-diff.html">Lesson 02</a>에서 <strong>diff를 못 믿는 법</strong>을 배웠다.
+그런데 그 diff가 우리 서버에 들어오는 문 자체는 아직 잠기지 않았다.
+이번엔 그 문 — <code>POST /webhook</code> — 이다.
+끝나면 <code>security.py</code>의 검증 함수를 <strong>왜 그 순서로</strong> 써야 하는지 알게 된다.
+</p>
+
+<p class="callout">
+전체 그림에서 <strong>①</strong>. 아직 큐도 DB도 없다. 문 하나만 단다.
+</p>
+
+<h2>먼저: 서명이 뭘 증명하나</h2>
+
+<p>
+GitHub와 우리는 <strong>공유 비밀(secret)</strong> 하나를 미리 나눠 갖는다.
+GitHub은 요청을 보낼 때 <code>HMAC-SHA256(secret, body)</code>를 계산해
+<code>X-Hub-Signature-256</code> 헤더에 담는다. 우리는 같은 계산을 다시 해서 맞춰본다.
+</p>
+
+<p>
+맞으면 증명되는 건 딱 하나 — <strong>이 요청을 만든 쪽이 그 비밀을 갖고 있다.</strong>
+"내용이 참이다"도 "안전하다"도 아니다. <em>출처</em>만 증명한다.
+그래서 Lesson 02의 트러스트 바운더리가 여전히 필요하다. 두 경계는 다른 것을 막는다.
+</p>
+
+<div class="table-scroll">
+<table>
+  <tr><th>경계</th><th>막는 것</th><th>어디</th></tr>
+  <tr><td>HMAC 서명 (INV-1)</td><td>아무나 보낸 <strong>가짜 요청</strong></td><td><code>webhook/security.py</code></td></tr>
+  <tr><td>untrusted diff (Lesson 02)</td><td>진짜 요청 안의 <strong>악성 내용</strong></td><td><code>agents/base.py</code></td></tr>
+</table>
+</div>
+
+<p>
+GitHub이 보낸 진짜 PR 안에 인젝션 주석이 들어있는 건 <strong>완벽히 정상적인 시나리오</strong>다.
+서명은 통과한다. 그게 통과해야 맞다.
+</p>
+
+<h2>함정 ①: 파싱하면 서명이 죽는다</h2>
+
+<p>
+FastAPI에서 제일 자연스러운 코드는 이거다. 그리고 <strong>절대 안 맞는다.</strong>
+</p>
+
+<pre><code>payload = await request.json()          <span class="c-bad"># dict 가 됐다</span>
+body = json.dumps(payload).encode()     <span class="c-bad"># 다시 바이트로... 같은 바이트가 아니다</span>
+mac = hmac.new(secret, body, hashlib.sha256)</code></pre>
+
+<p>
+HMAC은 <strong>바이트 열</strong>을 먹는다. 한 글자만 달라도 결과가 완전히 달라진다.
+그런데 <code>json.dumps()</code>는 원본을 복원하지 못한다:
+</p>
+
+<div class="table-scroll">
+<table>
+  <tr><th>GitHub이 보낸 원본</th><th><code>json.dumps()</code> 결과</th></tr>
+  <tr><td><code>{"a":1,"b":2}</code></td><td><code>{"a": 1, "b": 2}</code> <span class="c-bad">← 공백</span></td></tr>
+  <tr><td><code>{"b":2,"a":1}</code></td><td>키 순서가 dict 삽입 순서로 <span class="c-bad">고정</span></td></tr>
+  <tr><td><code>"café"</code></td><td><code>"café"</code> <span class="c-bad">← 이스케이프 풀림</span></td></tr>
+</table>
+</div>
+
+<p>
+사람 눈엔 같은 JSON이고 <code>==</code> 로 비교하면 같은 dict다. <strong>바이트로는 다른 문서다.</strong>
+</p>
+
+<p class="callout">
+<strong>정답:</strong> <code>body = await request.body()</code> — 손대지 않은 raw bytes.
+서명 계산에도, 그 뒤 <code>json.loads(body)</code> 에도 이 값 하나를 쓴다.
+</p>
+
+<h2>함정 ②: <code>==</code> 로 비교하면 안 된다</h2>
+
+<p>
+파이썬의 <code>==</code>는 문자열을 앞에서부터 비교하다 <strong>다른 글자를 만나면 즉시 멈춘다.</strong>
+그래서 첫 글자가 틀린 서명은 아주 조금 빨리 거부된다.
+공격자가 같은 요청을 수만 번 보내며 응답 시간을 재면, 그 미세한 차이로
+<strong>서명을 한 글자씩 알아낼 수 있다</strong>(타이밍 공격).
+</p>
+
+<pre><code>hmac.compare_digest(expected, received)   <span class="c-good"># 항상 전체를 비교한다</span></code></pre>
+
+<p>
+GitHub 공식 문서도 명시적으로 이걸 요구한다 —
+"<em>timing-safe methods like <code>secure_compare</code> or <code>crypto.timingSafeEqual</code></em>"
+(<a href="https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries">Validating webhook deliveries</a>).
+</p>
+
+<div class="quiz" data-answer="3">
+  <p class="quiz-q">웹훅 핸들러에서 <code>await request.body()</code> 대신 <code>await request.json()</code>을 쓰면 생기는 일은?</p>
+  <ol class="quiz-opts">
+    <li data-fb="파싱 자체는 성공한다. 실패하는 건 그 뒤의 서명 대조다. 페이로드는 멀쩡하다.">본문 파싱이 실패해서 예외가 난다</li>
+    <li data-fb="공백·키순서·이스케이프가 달라져도 dict 로는 동등하다. 내용은 안 바뀐다.">페이로드 내용이 조용히 변형된다</li>
+    <li data-fb="바이트가 달라지므로 HMAC 결과가 달라진다. 정상 요청이 전부 400 으로 튕긴다 — 원인 찾기 제일 어려운 종류.">정상 요청도 서명이 안 맞게 된다</li>
+    <li data-fb="타이밍 취약점은 비교 방식의 문제다. 본문을 어떻게 읽는지와는 층이 다르다.">타이밍 공격에 취약한 상태가 된다</li>
+  </ol>
+</div>
+
+<h2>함정 ③: 400인가 403인가 500인가</h2>
+
+<p>
+여기서 <strong>출처끼리 충돌한다.</strong> 그대로 보여준다.
+</p>
+
+<div class="table-scroll">
+<table>
+  <tr><th>상황</th><th>GitHub 공식 예제</th><th>이 프로젝트 (INV-1)</th></tr>
+  <tr><td>서명 불일치</td><td><code>403</code></td><td><code>400</code></td></tr>
+  <tr><td>서명 통과 + 깨진 JSON</td><td>언급 없음</td><td><code>400</code> (500 절대 아님)</td></tr>
+</table>
+</div>
+
+<p>
+GitHub 문서의 파이썬 예제는 <code>HTTPException(status_code=403, ...)</code> 을 쓴다.
+우리 <code>docs/invariants.md</code>는 <strong>400으로 획일화</strong>하기로 했다.
+근거는 <em>"실패 이유와 무관하게 항상 같은 응답"</em> — 403과 400을 갈라 쓰면
+공격자가 응답만 보고 <strong>"헤더는 맞췄고 서명만 틀렸구나"</strong>를 알게 된다.
+</p>
+
+<p>
+둘 다 방어 가능한 선택이다. 중요한 건 <strong>하나로 고정하고 그 이유를 적어두는 것</strong>
+(<code>03-build-plan.md</code>가 ADR로 남기라고 한 이유).
+</p>
+
+<p class="callout">
+<strong>진짜 체크포인트는 두 번째 줄이다.</strong> 영상에서 빌더 에이전트는 M1을 "다 됐다"고 선언했는데,
+독립 검증자가 <strong>깨진 JSON에 500 크래시</strong>를 잡아냈다 [02:38:39].<br>
+논리: 서명을 통과했다 = 상대가 비밀키를 가진 <strong>인증된 호출자</strong>다.
+인증된 호출자가 보낸 잘못된 본문은 <strong>클라이언트 잘못(4xx)</strong>이지 서버 잘못(5xx)이 아니다.
+500을 뱉으면 서버 모니터링에 헛경보가 뜨고, 진짜 장애를 그 소음에 묻어버린다.
+</p>
+
+<div class="quiz" data-answer="2">
+  <p class="quiz-q">서명은 맞는데 본문이 <code>{"pull_re</code> 처럼 잘린 JSON이면 뭘 돌려주나?</p>
+  <ol class="quiz-opts">
+    <li data-fb="처리에 실패했으니 500 이 맞아 보이지만, 잘못을 저지른 쪽은 서버가 아니다. 알람만 시끄러워진다.">500 — 서버가 처리에 실패했다</li>
+    <li data-fb="인증된 호출자가 잘못된 본문을 보냈다. 책임이 클라이언트에 있으므로 4xx 다. 헛경보도 안 뜬다.">400 — 보낸 쪽의 본문이 틀렸다</li>
+    <li data-fb="서명이 통과했으므로 인증은 이미 성공했다. 권한 문제가 아니다.">403 — 인증되지 않은 요청이다</li>
+    <li data-fb="큐에 아무것도 안 들어갔는데 성공을 알리면, 조용히 유실된다. 최악의 실패 모드.">200 — 일단 받았다고 알린다</li>
+  </ol>
+</div>
+
+<h2>그래서 순서가 이렇게 된다</h2>
+
+<pre><code>body = await request.body()        <span class="c-good"># ① raw bytes 를 먼저 잡는다</span>
+verify(body, signature_header)     <span class="c-good"># ② 서명. 실패 → 400, 여기서 끝</span>
+if event != "pull_request": ...    <span class="c-good"># ③ 관심 없는 이벤트 버리기</span>
+payload = json.loads(body)         <span class="c-good"># ④ 이제야 파싱. 실패 → 400</span>
+enqueue(...)                       <span class="c-good"># ⑤ 큐에 넣고</span>
+return 200                         <span class="c-good"># ⑥ 즉시 답한다</span></code></pre>
+
+<p>
+<strong>검증이 파싱보다 먼저다.</strong> 반대로 하면 "서명을 안 본 요청"에 대해
+파싱 로직이 먼저 도는 표면이 생긴다. 그 파서가 공격 대상이 된다.
+</p>
+
+<p>
+⑤와 ⑥이 붙어있는 이유는 <strong>시간</strong>이다. GitHub은 ack를 아주 빨리 기대하는데
+(영상의 두 수치: ~10초 [00:03:06] / ~10-12초, 화자가 불확실하다고 밝힘 [01:31:39])
+LLM 리뷰는 30~90초가 걸린다. 핸들러 안에서 리뷰하면 <strong>반드시 타임아웃</strong>이다.
+이건 취향이 아니라 외부 제약이고, 그래서 M1에 큐 <em>스텁</em>이라도 반드시 들어간다.
+</p>
+
+<h2>아직 확인 못 한 것</h2>
+
+<p class="callout">
+<strong>재배달(redelivery) 시 <code>X-GitHub-Delivery</code> GUID가 같은 값인가?</strong><br>
+GitHub 공식 문서 세 곳(validating deliveries · webhook events and payloads · redelivering webhooks)을
+찾아봤는데 <strong>명시된 문장이 없다.</strong> 파생 블로그 말고 1차 출처에서 아직 못 찾았다.<br><br>
+이게 왜 중요하냐면 — <strong>INV-2(멱등성)가 통째로 여기에 걸려 있다.</strong>
+GUID가 재배달마다 새로 발급된다면, delivery ID로 만든 dedup 키는 중복 리뷰를 못 막는다.
+같은 PR에 코멘트가 두 번 붙는다.<br><br>
+M1을 구현하면서 <strong>실제 재배달을 한 번 쏴보고 눈으로 확인</strong>할 것. 문서보다 관측이 세다.
+</p>
+
+<div class="footer">
+  <h3>1차 출처</h3>
+  <p>
+    <a href="https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries">GitHub Docs — Validating webhook deliveries</a><br>
+    헤더 이름·알고리즘·timing-safe 비교의 확정 출처. 파이썬 예제가 그대로 실려 있으니
+    <strong>구현 전에 이것부터 읽을 것.</strong> 다만 상태 코드(403)는 우리 선택(400)과 다르다는 걸 알고 볼 것.
+  </p>
+  <p>
+    <a href="https://docs.python.org/3/library/hmac.html">Python <code>hmac</code> 표준 라이브러리</a><br>
+    <code>hmac.new()</code> · <code>compare_digest()</code> 시그니처. 의존성 추가가 필요 없다.
+  </p>
+
+  <h3>다음</h3>
+  <ul class="next-steps">
+    <li><strong><code>backend/webhook/security.py</code> 구현</strong> — 여기서 배운 걸 <code>TODO(human)</code>으로 채운다</li>
+    <li><a href="0002-untrusted-diff.html">Lesson 02 — PR diff는 공격자가 쓴 글이다</a></li>
+    <li><a href="0001-schema-not-prompt.html">Lesson 01 — JSON을 부탁하지 말고 스키마로 강제하라</a></li>
+  </ul>
+
+  <p style="margin-top:1.5rem">
+    해보면 재미있는 것 — 검증이 돌기 시작하면
+    <strong>올바른 서명을 만든 뒤 본문의 공백 하나만 바꿔서</strong> 쏴보자.
+    "내용은 그대로인데 400이 뜬다"를 눈으로 보는 게 함정 ①을 영원히 기억하는 방법이다.
+  </p>
+
+  <p>
+    막히거나 애매한 부분은 그대로 물어보면 된다. 이 레슨을 쓴 에이전트가 선생이다.
+  </p>
+</div>
+
+<script src="../assets/quiz.js"></script>
+</body>
+</html>
