@@ -9,5 +9,34 @@ dependencies = [
     "openai>=1.60",
     "pydantic>=2.9",
     "python-dotenv>=1.0",
-    "uvicorn>=0.51.0",
+    "uvicorn[standard]>=0.51.0",
 ]
+
+[dependency-groups]
+dev = [
+    "debugpy>=1.8.21",
+    "httpx>=0.28.1",
+    "ruff>=0.14",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+# F  = pyflakes — 미정의 이름(F821), 미사용 import. `reqeust` 같은 오타를 잡는 게 이것이다.
+# E/W = pycodestyle, I = import 정렬, B = bugbear(흔한 함정), UP = 최신 문법
+select = ["F", "E", "W", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# 데모 스크립트는 케이스를 세로로 정렬한 표 형태다. 줄을 접으면 '무엇이 다른지'가
+# 눈에서 사라진다 — 읽히는 게 목적인 코드라 여기서만 줄길이를 뺀다.
+"scripts/*.py" = ["E501"]
+
+# backend/ 를 설치 가능한 패키지로 만들지 않은 건 의도다 — 지금 필요한 건 LSP 해석뿐이고,
+# 패키지 내부는 상대 import 로 푼다. scripts/ 는 sys.path 한 줄로 버틴다.
+# 갈아탈 신호: tests/ 가 생겨서 같은 땜빵이 두 곳이 되는 순간 (M1 3/3).
+[tool.basedpyright]
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "standard"
