@@ -16,6 +16,7 @@ dependencies = [
 dev = [
     "debugpy>=1.8.21",
     "httpx>=0.28.1",
+    "pytest>=9.1.1",
     "ruff>=0.14",
 ]
 
@@ -36,6 +37,13 @@ select = ["F", "E", "W", "I", "B", "UP"]
 # backend/ 를 설치 가능한 패키지로 만들지 않은 건 의도다 — 지금 필요한 건 LSP 해석뿐이고,
 # 패키지 내부는 상대 import 로 푼다. scripts/ 는 sys.path 한 줄로 버틴다.
 # 갈아탈 신호: tests/ 가 생겨서 같은 땜빵이 두 곳이 되는 순간 (M1 3/3).
+[tool.pytest.ini_options]
+# pytest 가 프로젝트 루트를 sys.path 에 넣어준다. tests/ 에서 `from backend...` 가
+# 그냥 된다는 뜻 — scripts/ 처럼 sys.path 를 손으로 만질 필요가 없다.
+# (패키지 설치까지 가지 않고 여기서 멈춘 이유: 아직 그게 필요한 순간이 아니다)
+pythonpath = ["."]
+testpaths = ["tests"]
+
 [tool.basedpyright]
 venvPath = "."
 venv = ".venv"
