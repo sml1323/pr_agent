@@ -3,31 +3,52 @@
 > 새 세션이 콜드 스타트할 때 **가장 먼저 읽는 파일.**
 > "지금 뭐가 진짜로 살아있고, 뭐가 스텁이고, 다음 한 걸음이 뭔가"만 적는다. 설계는 여기 안 적는다.
 
-**마지막 갱신**: 2026-07-28 · 설계·하네스 완료, 코드 0줄
+**마지막 갱신**: 2026-07-28 · **M0 데모 통과, 독립검증 대기**
 
 ---
 
 ## 지금 살아있는 것
 
-문서만. **코드 없음, DB 없음, 계정 없음.**
+**M0이 실제로 돈다.** DB·웹훅·큐는 아직 없음.
 
-| | |
-|---|---|
-| 하네스 | `WORKFLOW.md` `DONE.md` `invariants.md` `PLAN.md` `adr/0001` `adr/0002` |
-| 참조 | `01-chapter-map.md` `02-architecture.md` `03-build-plan.md` `04-book-reading-plan.md` |
-| 원본 | `source/transcript.txt` `source/segment_map.json` |
+| | | 상태 |
+|---|---|---|
+| `backend/agents/schema.py` | `Finding`(7필드) + `ReviewResult` | ✅ 계약 확정. INV-3을 스키마가 강제 |
+| `backend/agents/base.py` | system 프롬프트 + `parse()` 호출 1회 | ✅ 동작. 모델 `gpt-5.4-nano` |
+| `scripts/demo_m0.py` | 데모 + 완료 판정 도우미 | ✅ |
+| `fixtures/*.diff` | `sample`(정상) · `sample_injected`(인젝션) · `sample_emotional`(사회공학) | ✅ 정답을 아는 상태 |
+| 하네스 | `WORKFLOW.md` `DONE.md` `invariants.md` `PLAN.md` `adr/0001` `adr/0002` `CLAUDE.md` | ✅ |
+| 학습 | `learning/` — MISSION · RESOURCES · 레슨 2개 · 레퍼런스 1개 | ✅ |
+
+**아직 없는 것**: 웹훅 · DB · 큐 · 오케스트레이션 · 리트리버 · 게이트 · GitHub 게시.
+
+**환경**: `uv` · OpenAI 키(`.env`) · 원격 저장소 없음(사용자가 삭제, 로컬 커밋 `1a822ed`만 존재).
+⬜ **OpenAI 하드 리밋 미확인** — 대시보드에서 월 상한 걸 것. 비용은 1급 실패 모드 [01:21:42]
 
 ## 다음 한 걸음
 
-### 지금 — M0 착수
+### 1. M0 독립 검증 — **새 세션에서**
 
-`python scripts/demo_m0.py fixtures/sample.diff`
+`WORKFLOW.md` ④. 구현 세션(이 대화)의 내용을 **절대 붙여넣지 않는다.**
 
-M0에 필요한 건 **OpenAI 키 + 손으로 쓴 `fixtures/sample.diff`** 둘뿐. DB도 레포도 웹훅도 안 씀.
+```
+너는 독립 리뷰어다. 코드를 쓰지 마라. 빌더의 주장을 참이라 가정하지 마라.
 
-- ✅ OpenAI API 키 — `.env`에 넣음 (2026-07-28)
-- ⬜ **하드 리밋** — 대시보드에서 월 상한. 비용은 1급 실패 모드 [01:21:42]
-- ⬜ **`.gitignore`** — `.env`가 지금 untracked로 노출돼 있음
+목표: .diff 하나를 넣으면 구조화된 Finding 배열이 나온다.
+성공 기준: uv run python scripts/demo_m0.py fixtures/sample.diff
+          → 모든 항목에 confidence(0~1)·rationale·file·line 이 채워짐.
+            confidence 가 항상 같은 값이면 실패.
+불변식: docs/invariants.md 를 읽어라.
+
+직접 실행해서 확인하고, 어떤 불변식이 위험한지 말해라.
+```
+
+**질문을 "돌아가나"가 아니라 "어떤 불변식이 위험한가"로** 던질 것 [02:57:57].
+`PLAN.md`의 M0 "알려진 구멍" 7개는 **주지 말 것** — 검증자가 스스로 찾는지가 이 단계의 값어치다.
+
+### 2. M1 — 웹훅 인그레스
+
+`03-build-plan.md` M1 절. 브랜치를 따서 갈 것 (`git checkout -b m1-webhook`).
 
 ### 결정을 미룬 것 — 각 마일스톤 브리핑 직전에 (2026-07-28 재배치)
 
@@ -40,6 +61,7 @@ M0에 필요한 건 **OpenAI 키 + 손으로 쓴 `fixtures/sample.diff`** 둘뿐
 | **G9** | `agent_events`에 증거 스니펫 원문을 넣을지 / 마스킹할지 / 해시+포인터만 남길지. 보존·압축 정책 | **M2 브리핑 직전** | ∞ (INV-4가 삭제 하드 거부) |
 | **G8** | `code_chunks`에 `repo_id`·`commit_sha` 박기. `past_reviews`·`conventions`를 남길지 뺄지 | **M2 브리핑 직전** | 재인덱싱 = 돈 |
 | **G6** | 애그리게이터 계약 — LLM인가 코드인가 / dedup 키 / severity 충돌 시 뭐가 남나 | **M5 브리핑 직전** (M5 state의 findings 모양이 여기 걸림) | 0 (문서 한 문단) |
+| ↳ | **M0에서 실측 근거가 나옴** — 같은 `(file, line, category)`에 `severity`만 다른 중복이 **에이전트 하나의 한 번 호출**에서 생성됨. dedup 키에 `category`가 필요하고, severity 충돌 시 **더 심각한 쪽을 남겨야** 한다(`critical`을 버리면 사람에게 갈 것이 자동 게시됨). 상세는 `PLAN.md` G-M0-3 | | |
 | **G5** | 트러스트 바운더리를 diff + **검색 결과**로 확장 | **M7 브리핑 직전** | 0 (ADR 한 줄) |
 
 **M2 브리핑 직전에 같이 할 것** — 미루면 잊으니까 여기 묶어둠:

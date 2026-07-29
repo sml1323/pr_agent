@@ -38,7 +38,11 @@ class Finding(BaseModel):
 
     file: str = Field(description="파일 경로. diff의 +++ 줄에서 나온다")
 
+    # ge=1 인 이유: 파일에 0번 줄은 없다. 타입만 int 로 두면 모델이 "모르겠으니 0"을
+    # 뱉어도 스키마가 통과시키고, M8에서 GitHub 0번 줄에 코멘트를 달려다 실패한다.
+    # 실제로 M0에서 line=0 이 나왔고 완료 판정 ②를 그대로 통과했다.
     line: int = Field(
+        ge=1,
         description="새 파일 기준 줄 번호. diff의 @@ 헤더를 보고 계산할 것"
     )
 
