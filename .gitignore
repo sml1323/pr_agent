@@ -26,3 +26,7 @@ reference_books/
 # 우리가 만든 요약(docs/01-chapter-map.md)과 구조화 추출본(segment_map.json)은 커밋한다.
 docs/source/transcript.txt
 docs/source/transcript.en.json3
+
+# 구조화 추출본(252K) — 원문 인용은 없지만 촘촘해서 원본의 대체재에
+# 가까워질 수 있다. 설계 근거는 docs/*.md 안의 타임스탬프 인용으로 충분하다.
+docs/source/segment_map.json
