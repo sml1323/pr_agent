@@ -40,7 +40,13 @@
 
 ---
 
-## D3. DB는 처음부터 Tiger Cloud
+## D3. ~~DB는 처음부터 Tiger Cloud~~ → **개정됨 (2026-07-30)**
+
+> ⚠️ **[ADR 0003](0003-local-postgres-instead-of-tiger.md)이 이 결정을 뒤집었다.**
+> 로컬 Docker(`timescale/timescaledb-ha`)로 간다. 이유는 포트폴리오 재현성 —
+> `docker compose up -d`로 남이 돌려볼 수 있는 레포가 되는 게 더 값어치 있다.
+> **아래 근거 중 "에이전트가 MCP로 프로비저닝하는 경험"은 이미 얻었다** (한 번 실제로 띄웠다).
+> 아래는 당시 판단의 기록으로 남긴다.
 
 **결정**: 로컬 Docker를 건너뛰고 처음부터 TigerData Tiger Cloud. `docker-compose.yml`은 만들지 않는다.
 

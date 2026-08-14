@@ -3,7 +3,7 @@
 > 새 세션이 콜드 스타트할 때 **가장 먼저 읽는 파일.**
 > "지금 뭐가 진짜로 살아있고, 뭐가 스텁이고, 다음 한 걸음이 뭔가"만 적는다. 설계는 여기 안 적는다.
 
-**마지막 갱신**: 2026-07-29 · **M1 코드 완료, 테스트 미작성 · M0 독립검증 대기**
+**마지막 갱신**: 2026-08-14 · **M1 코드 완료, 테스트 미작성 · M0 독립검증 대기 · LLM 백엔드 로컬 프록시로 교체**
 
 ---
 
@@ -14,11 +14,11 @@
 | | | 상태 |
 |---|---|---|
 | `backend/agents/schema.py` | `Finding`(7필드) + `ReviewResult` | ✅ 계약 확정. INV-3을 스키마가 강제 |
-| `backend/agents/base.py` | system 프롬프트 + `parse()` 호출 1회 | ✅ 동작. 모델 `gpt-5.4-nano` |
+| `backend/agents/base.py` | system 프롬프트 + `responses.parse()` 호출 1회 | ✅ 동작. 모델 `gpt-5.6-luna` (2026-08-14 교체) |
 | `scripts/demo_m0.py` | 데모 + 완료 판정 도우미 | ✅ |
 | `fixtures/*.diff` | `sample`(정상) · `sample_injected`(인젝션) · `sample_emotional`(사회공학) | ✅ 정답을 아는 상태 |
 | 하네스 | `WORKFLOW.md` `DONE.md` `invariants.md` `PLAN.md` `adr/0001` `adr/0002` `CLAUDE.md` | ✅ |
-| 학습 | `learning/` — MISSION · RESOURCES · 레슨 2개 · 레퍼런스 1개 | ✅ |
+| 학습 | `learning/` — MISSION · RESOURCES · NOTES · NOTEBOOK · 레슨 5 · 시뮬 3 · 레퍼런스 2 | ✅ 아래 "학습 하네스" 절 |
 
 **M1도 돈다 — 테스트만 빼고.** (브랜치 `m1-webhook`, 커밋 3개)
 
@@ -43,14 +43,97 @@
 `docs/invariants.md` INV-2에 근거 정정을 반영했다(사용자 승인). **불변식 자체는 유효** —
 수동 재배달·워커 재시도·연속 push가 중복 경로로 남는다. 출처는 `learning/RESOURCES.md`.
 
-**아직 없는 것**: DB · 오케스트레이션 · 리트리버 · 게이트 · GitHub 게시 · 진짜 큐(Redis).
+**M2 착수 — 판이 깔렸다.** (2026-07-30)
 
-**환경**: `uv` · OpenAI 키 + `WEBHOOK_SECRET`(`.env`) · 원격 https://github.com/sml1323/pr_agent (**public**).
+| | | 상태 |
+|---|---|---|
+| `docker-compose.yml` | `timescaledb-ha:pg17` · `127.0.0.1`만 바인드 · healthcheck | ✅ 확장 4개 확인 (timescaledb 2.29.0 · vector 0.8.5 · vectorscale 0.9.0 · toolkit 1.24.0) |
+| `scripts/migrate.py` | `migrations/*.sql` 번호순 **전부 재실행**. 이력 추적 안 함 | ✅ 두 번 연속 실행해도 같은 결과 확인 |
+| `migrations/001_extensions.sql` | `timescaledb` + `vector`. `vectorscale`은 M7까지 안 요구 | ✅ 적용됨 |
+| `migrations/002_time.sql` | `agent_events` 하이퍼테이블 · `chunk_interval='1 day'` | ✅ 적용됨. 첫 INSERT 로 `chunks=1` 확인 |
+| `migrations/003_immutable.sql` | append-only 트리거 3개 (UPDATE·DELETE·TRUNCATE) | ✅ **완료 판정 통과** — 아래 |
+| `.env` | `DATABASE_URL` 추가 (로컬이라 비밀 아님) | ✅ |
+
+**INV-4 가 코드가 됐다** (2026-08-14). 실측:
+
+```
+① INSERT    INSERT 0 1                                    ✅ 살아있다
+② UPDATE    ERROR: append-only 다 (INV-4). UPDATE 는 …     ✅ 막힘
+③ DELETE    ERROR: append-only 다 (INV-4). DELETE 는 …     ✅ 막힘
+④ TRUNCATE  ERROR: append-only 다 (INV-4). TRUNCATE 는 …   ✅ 막힘
+```
+
+⚠️ **①이 성공하는지도 같이 봐야 한다.** 넷 다 에러면 방어가 아니라 표가 죽은 것이고,
+"전부 에러 남" 만 보면 두 경우가 구분되지 않는다. 행 1개가 남은 것이 그 증거다.
+
+⬜ **아직 안 막힌 문 두 개** — `drop_chunks()` 와 `DROP TABLE`. 트리거로는 원리적으로 못 막는다
+(Postgres 트리거 이벤트에 DROP 이 없다). `006_rbac.sql` 의 일이다.
+지금 `DATABASE_URL` 이 `postgres` 슈퍼유저라 **저 둘은 그냥 통과한다.**
+
+⚠️ **DB 컨테이너는 항상 떠 있지 않다.** 재부팅을 못 넘긴다 → `docker compose up -d` 부터.
+포트는 **5434** (다른 Postgres 와 충돌해서 5432 에서 옮김. `docker-compose.yml` 과 `.env` 양쪽).
+
+**학습 하네스가 커졌다.** (2026-07-30)
+
+| | | 상태 |
+|---|---|---|
+| `learning/lessons/` | 레슨 5개 (01 스키마 · 02 인젝션 · 03 HMAC · 04 멱등성 · 05 삭제 문 4개) | ✅ |
+| `learning/sims/` | 시뮬 3개 — 0001 스키마 게이트 · 0002 인젝션 실습실 · 0005 네 개의 문 | ✅ 02~04 중 03·04 시뮬 없음 |
+| `learning/NOTEBOOK.md` | **사용자가 자기 말로 적는 곳.** Claude가 채우지 않는다 | ✅ Lesson 01 만 4/4 |
+| `.claude/skills/learn-check/` | 학습 사이클을 **파일로** 판정하는 프로젝트 스킬 | ✅ `/learn-check` 또는 `python3 .claude/skills/learn-check/scripts/check.py` |
+
+`CLAUDE.md`의 학습 사이클이 **읽기 → 만지기 → 적기 → 만들기** 4단계로 바뀌었다.
+⚠️ `/mattpocock-skills:teach`는 **Claude의 스킬 목록에 뜨지 않는다** — 사용자가 직접 쳐야 한다.
+
+**LLM 백엔드를 로컬 OAuth 프록시로 교체.** (2026-08-14)
+
+ChatGPT 구독의 OAuth 토큰을 OpenAI 호환 엔드포인트로 노출하는 제3자 도구
+[`openai-oauth`](https://github.com/EvanZhouDev/openai-oauth)(npm, 비공식)를 쓴다.
+`npx openai-oauth` → `http://127.0.0.1:10531/v1`. 토큰은 `~/.codex/auth.json`을 읽으므로
+**먼저 `npx @openai/codex login`이 필요**하다(1회). 프록시는 재부팅을 못 넘긴다 — 다시 띄울 것.
+
+📌 **`/v1/chat/completions`를 쓰면 안 된다.** 실측(2026-08-14):
+
+| 경로 | `response_format` / `text_format` | 결과 |
+|---|---|---|
+| `client.chat.completions.parse` | 무시됨 | ❌ 자유 텍스트가 와서 `ValidationError: Invalid JSON` |
+| `client.responses.parse` | 지켜짐 | ✅ `[critical] sql-injection @ app.py:3 conf=0.99` |
+
+프록시가 Codex 전용 엔드포인트를 감싸는 어댑터인데 Codex가 Responses API 네이티브라,
+`/v1/chat/completions`는 모양만 맞춘 호환 계층이고 스키마가 상류까지 안 내려간다.
+**에러가 아니라 조용한 무시**라서 위험하다 — `.parse()`가 터져준 게 운이 좋았던 것.
+
+- `client = OpenAI()`는 안 고쳤다. SDK가 `OPENAI_BASE_URL`을 자동으로 읽는다 →
+  진짜 API로 되돌리는 건 `.env` 두 줄 삭제. **코드는 어느 백엔드인지 몰라도 된다**
+- `usage` 필드명이 바뀌었다: `prompt/completion_tokens` → **`input/output_tokens`**.
+  M3에서 `record_event`에 붙일 때 걸린다
+- `.env`의 진짜 API 키는 주석 처리했다 — 프록시는 `Authorization`을 무시하므로
+  제3자 패키지에 키를 넘길 이유가 없다
+- ⚠️ 비공식 커뮤니티 프로젝트다. 개인 로컬 학습용으로만. 남에게 보여줄 물건이 되면 진짜 키로 되돌린다
+
+**아직 없는 것**: `agent_events` 하이퍼테이블 · append-only 트리거 · RBAC · 오케스트레이션 · 리트리버 · 게이트 · GitHub 게시 · 진짜 큐(Redis).
+
+**환경**: `uv` · `OPENAI_BASE_URL`(로컬 프록시) + `WEBHOOK_SECRET` + `DATABASE_URL`(`.env`) ·
+원격 https://github.com/sml1323/pr_agent (**public**).
 영상 파생 문서 2개(`docs/source/segment_map.json`, `docs/01-chapter-map.md`)는 저작권 판단으로
 **히스토리에서 제거**하고 `.gitignore`에 등록 — 로컬에는 남아 있다.
-⬜ **OpenAI 하드 리밋 미확인** — 대시보드에서 월 상한 걸 것. 비용은 1급 실패 모드 [01:21:42]
+⬜ ~~**OpenAI 하드 리밋 미확인**~~ — 프록시로 가면서 **호출당 과금이 사라졌다**(구독).
+새 예산은 비용이 아니라 **구독 한도와 지연**이다. 실측: diff 한 건에 output 344 토큰 중
+reasoning 162(47%). M6에서 에이전트 4개로 갈리면 이게 4배고, 프록시가 무상태라
+히스토리도 매번 다시 올라간다. 진짜 키로 되돌릴 때 월 상한 거는 건 그대로 유효 [01:21:42]
 
 ## 다음 한 걸음
+
+### 0. M2 이어가기 — `004_truth.sql`  ← **지금 여기**
+
+`003` 까지 끝났다. 다음은 **진실 테이블** — `reviews`, `findings`, `hitl_decisions`.
+`agent_events` 와 달리 이들은 **상태가 바뀌고 id 로 조회**하므로 하이퍼테이블이 아니라 평범한 테이블이다.
+(왜 모양이 다른지는 [Lesson 05](../learning/lessons/0005-four-doors-to-delete.html) 0-a 절)
+
+그다음 `005_memory.sql` → `006_rbac.sql`.
+- **`005` 전에 G8 결정** 필요 (`code_chunks` 에 `repo_id`·`commit_sha` 박기)
+- **`006` 이 문 ④⑤ 를 막는다** — `drop_chunks`·`DROP TABLE`. 지금은 뚫려 있다
+- **`record_event()` 를 쓰기 전에 G9 결정** 필요 (payload 에 무엇을 넣나 — INV-4 때문에 영구적)
 
 ### 1. M0 독립 검증 — **새 세션에서**
 
@@ -110,10 +193,10 @@ INV-2가 여기 걸려 있으므로 실제 웹훅을 등록하고 재배달을 �
 
 **M2 브리핑 직전에 같이 할 것** — 미루면 잊으니까 여기 묶어둠:
 1. **Ch8 읽기** (3쪽, 25분) — `reference_books/Agentic_Design_Patterns.pdf` Memory Management. G9·G8의 재료
-2. **TigerData 계정 + Tiger CLI** — 영상 설명란 링크로 가입해야 신규 $1,000 크레딧 [02:48:27].
-   ⚠️ 결제 실패로 **조용히 pause**되는 사고가 영상에서 실제로 남 — 크레딧 만료일 캘린더에.
-   콘솔에서 **서비스는 만들지 말 것.** M2에서 에이전트가 Tiger MCP로 직접 프로비저닝함 ([ADR 0001](adr/0001-project-setup.md) D3).
-   CLI를 설치하면 MCP 서버가 같이 들어옴 → `tiger auth login` → `tiger service list`(0개 나오면 정상)
+2. ~~**TigerData 계정 + Tiger CLI**~~ — **완료 후 무효** ([ADR 0003](adr/0003-local-postgres-instead-of-tiger.md)).
+   실제로 해봤다: `tiger mcp install` → MCP 연결 → `service_create`로 서비스 프로비저닝 → 확장 조회.
+   ADR 0001 D3이 노린 "에이전트가 인프라를 코드처럼 세팅한다" 경험은 얻었고, 서비스는 지웠다.
+   **`tiger` MCP는 `.mcp.json`에 남겨둠** — `search_docs`가 TimescaleDB·Postgres 문서 검색에 유용.
 
 **M7 직전에 할 것**: 테스트 레포 + 버그 심은 PR (SQL 인젝션 한 줄 + 테스트 없는 함수 하나). 작을수록 좋음. **정답을 내가 아는 것**이 핵심.
 
@@ -124,15 +207,15 @@ INV-2가 여기 걸려 있으므로 실제 웹훅을 등록하고 재배달을 �
 | **코드 작성** | **내가 직접 타이핑** | [ADR 0002](adr/0002-implementation-mode.md). Claude는 브리핑·힌트·독립검증·개념설명만 |
 | 하네스 | **직접** (Genesis Kit 안 씀) | `DONE.md` 고정 / 마일스톤당 데모 명령 / 별도 세션 독립 검증 |
 | 범위 | **M8까지** | 선별이 실제로 도는 지점 |
-| DB | **처음부터 Tiger Cloud** | 로컬 Docker 안 씀 |
+| DB | **로컬 Docker** (`timescaledb-ha:pg17`) | [ADR 0003](adr/0003-local-postgres-instead-of-tiger.md) — 2026-07-30에 Tiger Cloud에서 변경. 포폴 재현성 |
 | 리뷰 대상 | 개인 토이 레포 + 심은 버그 | |
 | 학습 비중 | 설계사고 60 / 완성 30 / 하네스 10 | |
-| LLM | OpenAI 하나로 | |
+| LLM | OpenAI 하나로 | [ADR 0004](adr/0004-local-oauth-proxy-for-llm.md) — 2026-08-14부터 **로컬 OAuth 프록시** 경유(`:10531`). Responses API만 스키마가 먹는다. **되돌리는 조건이 ADR에 있다** |
 | 참고서 | **저스트-인-타임** — 마일스톤 브리핑 직전에 해당 챕터만 | [04-book-reading-plan.md](04-book-reading-plan.md) |
 
 ## 알려진 리스크 (착수 시점)
 
-- Tiger를 처음부터 쓰면 초반 마이그레이션 반복이 로컬보다 느림 — 갈아엎기 잦은 M2에서 체감. **마이그레이션을 재실행 가능하게 쓸 것**
+- ~~Tiger를 처음부터 쓰면 초반 마이그레이션 반복이 로컬보다 느림~~ — **해소** ([ADR 0003](adr/0003-local-postgres-instead-of-tiger.md)). `docker compose down -v`로 갈아엎는다. 단 **마이그레이션을 재실행 가능하게 쓸 것**은 그대로 유효 (`scripts/migrate.py`가 이력을 추적하지 않고 매번 전부 재실행하므로 더 중요해졌다)
 - `TRUNCATE`가 DELETE 트리거를 우회 (INV-4) — M2에서 반드시 걸림
 - pgvector 차원 불일치 — M2에서 **한 곳(마이그레이션)에만** 정의하고 코드가 거기서 읽게 [03:03:59]
 - **G2**: 스페셜리스트 노드가 죽었을 때 "critical 없음"과 "확인 안 됨"을 게이트가 구분 못 함 → M5·M8에서 처리. 이 프로젝트 최악의 시나리오인데 고치는 건 if문 몇 줄
