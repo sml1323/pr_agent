@@ -47,6 +47,25 @@
 - 책: *Agentic Design Patterns* (`reference_books/`)
   Use for: **저스트-인-타임으로만.** 마일스톤 직전 해당 챕터만. 읽는 법은 [`docs/04-book-reading-plan.md`](../docs/04-book-reading-plan.md).
 
+- [Tiger Docs — Understand chunks](https://www.tigerdata.com/docs/learn/chunks/understanding-chunks)
+  하이퍼테이블(논리) ↔ chunk(물리 테이블)의 관계. **"Inheritance is not supported for hypertables"** 주의문 포함.
+  Use for: M2 `agent_events` 설계. 트리거를 거는 대상과 데이터가 실제로 든 테이블이 왜 다른지.
+
+- [Tiger Docs — Automate tasks with triggers](https://www.tigerdata.com/docs/build/performance-optimization/automate-tasks-with-triggers)
+  **"TimescaleDB propagates the change to every chunk."** 하이퍼테이블 트리거가 chunk까지 전파된다는 확정 근거.
+  Limitations 절도 볼 것 — transition table을 쓰는 ROW 트리거와 DELETE 트리거는 미지원.
+  Use for: `003_immutable.sql`이 chunk 레벨까지 유효한지의 근거.
+
+- [PostgreSQL — CREATE TRIGGER](https://www.postgresql.org/docs/17/sql-createtrigger.html) · [TRUNCATE](https://www.postgresql.org/docs/17/sql-truncate.html)
+  **"TRUNCATE will not fire any ON DELETE triggers... But it will fire ON TRUNCATE triggers."**
+  그리고 **"Triggers on TRUNCATE may only be defined at statement level, not per-row."**
+  Use for: INV-4의 문 ③. DELETE 트리거만 걸면 뚫리는 이유와, TRUNCATE 트리거를 statement-level로 써야 하는 이유.
+
+- [Tiger Docs — Understand data retention](https://www.tigerdata.com/docs/learn/data-lifecycle/data-retention/about-data-retention)
+  **"dropping data by the chunk is faster, because it deletes an entire file from disk."**
+  Use for: INV-4의 문 ④. `drop_chunks()`가 DDL이라 DML 트리거의 사정거리 밖인 근거 → RBAC이 별도로 필요한 이유.
+  ⚠️ 보존 정책을 켜면 INV-4와 정면 충돌한다는 것도 여기서 나온다.
+
 ## Wisdom (Communities)
 
 - [r/LocalLLaMA](https://reddit.com/r/LocalLLaMA) · [r/LLMDevs](https://reddit.com/r/LLMDevs)
@@ -65,5 +84,11 @@
   다만 delivery 객체가 `id`(시도)와 `guid`(이벤트)를 나눠 갖고 `redelivery` 플래그가 따로 있다는
   **구조적 근거**는 확보했다. 추측을 사실로 승격시키지 말 것 — M1 끝나고 실제 재배달로 관측한다.
   [Lesson 04](lessons/0004-same-delivery-twice.html)
+
+- **`CREATE RULE`이 하이퍼테이블에서 실패한다는 1차 출처가 없음** — 프로젝트 문서가
+  "RULE은 쿼리 재작성 단계에서 돌고 하이퍼테이블은 재작성 규칙을 미지원" [03:00:45]이라 적었으나,
+  Tiger 문서에서 확인된 건 **"Inheritance is not supported for hypertables"**까지다.
+  어차피 트리거로 가므로 실무 영향은 없지만 근거 등급은 구분해 둔다.
+  [Lesson 05](lessons/0005-four-doors-to-delete.html)
 
 - **confidence 캘리브레이션** — LLM이 뱉는 확신도가 실제 정확도와 맞는지 재는 방법. M11이 범위 밖이라 지금은 공백으로 둔다.

@@ -35,3 +35,10 @@ docs/source/segment_map.json
 # 우리 글이지만 촘촘해서 원본을 대신할 소지가 있어 공개 레포에서는 뺀다.
 # 로컬에는 남아 설계 근거를 되짚는 데 계속 쓰인다.
 docs/01-chapter-map.md
+
+# 파이썬 캐시
+__pycache__/
+*.pyc
+
+# 머신별 Claude Code 설정 (권한 허용 목록 등) — 스킬은 커밋한다
+.claude/settings.local.json

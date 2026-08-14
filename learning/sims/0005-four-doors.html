@@ -1,0 +1,769 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sim 05 — 삭제로 가는 네 개의 문</title>
+<style>
+  :root {
+    --bg: #0f1620;
+    --panel: #172231;
+    --panel2: #1e2c3f;
+    --rule: #2c3e55;
+    --fg: #e8eef6;
+    --muted: #93a4bb;
+    --ok: #3ecf8e;
+    --bad: #ff6b6b;
+    --warn: #ffb454;
+    --accent: #5aa9ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; height:100%; overflow:hidden;
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", sans-serif; }
+  #app { display:flex; height:100vh; }
+
+  /* ── 좌측 조작판 ───────────────────────────── */
+  #left { width: 310px; flex:none; background: var(--panel); border-right:1px solid var(--rule);
+    display:flex; flex-direction:column; overflow-y:auto; }
+  #left h1 { font-size: 1rem; margin: 0; padding: 14px 16px 4px; letter-spacing:-.01em; }
+  #left .sub { font-size:.72rem; color:var(--muted); padding: 0 16px 12px; line-height:1.5; }
+  .sec { border-top:1px solid var(--rule); padding: 12px 16px; }
+  .sec h2 { font-size:.68rem; text-transform:uppercase; letter-spacing:.1em;
+    color:var(--muted); margin:0 0 9px; font-weight:600; }
+
+  .tog { display:flex; align-items:flex-start; gap:9px; padding:7px 8px; margin-bottom:4px;
+    border:1px solid var(--rule); border-radius:6px; cursor:pointer; background:var(--panel2);
+    transition:border-color .12s, background .12s; }
+  .tog:hover { border-color:var(--accent); }
+  .tog.on { border-color:var(--ok); background:color-mix(in srgb, var(--ok) 12%, var(--panel2)); }
+  .tog .box { width:15px; height:15px; flex:none; margin-top:1px; border-radius:3px;
+    border:1.5px solid var(--muted); display:grid; place-items:center; font-size:10px; }
+  .tog.on .box { border-color:var(--ok); background:var(--ok); color:#04180f; }
+  .tog .lbl { font-size:.78rem; line-height:1.35; }
+  .tog .lbl code { font-family: ui-monospace, Menlo, monospace; font-size:.7rem; color:var(--muted); }
+
+  .actor { display:flex; gap:6px; }
+  .actor button { flex:1; padding:8px 4px; font-size:.74rem; border-radius:6px; cursor:pointer;
+    border:1px solid var(--rule); background:var(--panel2); color:var(--fg); font-family:inherit; }
+  .actor button.on { border-color:var(--accent); background:color-mix(in srgb, var(--accent) 18%, var(--panel2)); }
+
+  .atk { width:100%; text-align:left; padding:9px 11px; margin-bottom:5px; border-radius:6px;
+    border:1px solid var(--rule); background:var(--panel2); color:var(--fg); cursor:pointer;
+    font-family: ui-monospace, Menlo, monospace; font-size:.75rem; transition:border-color .12s; }
+  .atk:hover:not(:disabled) { border-color:var(--bad); }
+  .atk:disabled { opacity:.4; cursor:default; }
+  .atk small { display:block; font-family:-apple-system, sans-serif; font-size:.66rem;
+    color:var(--muted); margin-top:3px; }
+
+  .util { display:flex; gap:6px; }
+  .util button { flex:1; padding:7px; font-size:.72rem; border-radius:6px; cursor:pointer;
+    border:1px solid var(--rule); background:transparent; color:var(--muted); font-family:inherit; }
+  .util button:hover { color:var(--fg); border-color:var(--accent); }
+
+  #streak { padding:10px 16px; font-size:.75rem; color:var(--muted);
+    border-top:1px solid var(--rule); display:flex; justify-content:space-between; }
+  #streak b { color:var(--ok); font-size:.95rem; }
+
+  /* ── 3D 무대 ──────────────────────────────── */
+  #stage { flex:1; position:relative; }
+  #canvasWrap { position:absolute; inset:0; }
+  #labels { position:absolute; inset:0; pointer-events:none; overflow:hidden; }
+  .lab { position:absolute; transform:translate(-50%,-50%); white-space:nowrap;
+    font-size:.7rem; font-family: ui-monospace, Menlo, monospace;
+    background:rgba(15,22,32,.82); border:1px solid var(--rule); border-radius:5px;
+    padding:3px 7px; color:var(--fg); }
+  .lab.dim { color:var(--muted); }
+  .lab b { color:var(--accent); }
+
+  /* ── 예측 오버레이 ────────────────────────── */
+  #predict { position:absolute; inset:0; display:none; place-items:center;
+    background:rgba(8,12,18,.78); backdrop-filter:blur(3px); z-index:20; }
+  #predict.show { display:grid; }
+  .card { width:min(440px, 88vw); background:var(--panel); border:1px solid var(--rule);
+    border-radius:10px; padding:20px 22px; }
+  .card .eyebrow { font-size:.66rem; text-transform:uppercase; letter-spacing:.11em;
+    color:var(--muted); margin-bottom:8px; }
+  .card h3 { margin:0 0 6px; font-size:1.02rem; }
+  .card .q { font-family: ui-monospace, Menlo, monospace; font-size:.8rem; color:var(--warn);
+    background:var(--panel2); border-radius:5px; padding:8px 10px; margin:10px 0 14px;
+    white-space:pre-wrap; line-height:1.5; }
+  .card .ctx { font-size:.74rem; color:var(--muted); line-height:1.6; margin-bottom:14px; }
+  .choices { display:flex; gap:8px; }
+  .choices button { flex:1; padding:12px 8px; border-radius:7px; cursor:pointer;
+    border:1px solid var(--rule); background:var(--panel2); color:var(--fg);
+    font-family:inherit; font-size:.85rem; font-weight:600; }
+  .choices button:hover { border-color:var(--accent); }
+
+  /* ── 결과 패널 ────────────────────────────── */
+  #result { position:absolute; right:16px; top:16px; width:min(370px, 42vw); z-index:15;
+    background:var(--panel); border:1px solid var(--rule); border-radius:10px;
+    padding:16px 18px; display:none; }
+  #result.show { display:block; }
+  #result .verdict { font-size:.95rem; font-weight:700; margin-bottom:2px; }
+  #result .verdict.ok { color:var(--ok); }
+  #result .verdict.bad { color:var(--bad); }
+  #result .guess { font-size:.7rem; color:var(--muted); margin-bottom:10px; }
+  #result .sql { font-family: ui-monospace, Menlo, monospace; font-size:.72rem;
+    background:var(--panel2); border-radius:5px; padding:8px 10px; margin-bottom:10px;
+    color:var(--warn); white-space:pre-wrap; line-height:1.45; }
+  #result .why { font-size:.78rem; line-height:1.65; color:var(--fg); }
+  #result .why em { color:var(--warn); font-style:normal; }
+  #result .cite { font-size:.68rem; color:var(--muted); line-height:1.55;
+    border-top:1px dashed var(--rule); margin-top:11px; padding-top:9px; }
+  #result .cite a { color:var(--accent); }
+  #result .close { margin-top:12px; width:100%; padding:8px; border-radius:6px; cursor:pointer;
+    border:1px solid var(--rule); background:transparent; color:var(--muted); font-family:inherit;
+    font-size:.75rem; }
+  #result .close:hover { color:var(--fg); }
+
+  #toast { position:absolute; left:50%; bottom:26px; transform:translateX(-50%);
+    background:var(--panel); border:1px solid var(--rule); border-radius:7px;
+    padding:9px 15px; font-size:.78rem; opacity:0; transition:opacity .25s; z-index:18; }
+  #toast.show { opacity:1; }
+
+  #hint { position:absolute; left:16px; bottom:16px; font-size:.7rem; color:var(--muted);
+    background:rgba(15,22,32,.72); border-radius:6px; padding:6px 10px; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── 좌측 조작판 ── -->
+  <div id="left">
+    <h1>삭제로 가는 네 개의 문</h1>
+    <p class="sub">방어를 켜고, 공격을 쏘고, <b>쏘기 전에 결과를 예측한다.</b><br>
+       INV-4 — <code>agent_events</code> 는 수정·삭제 불가.</p>
+
+    <div class="sec">
+      <h2>① 누구로 접속했나</h2>
+      <div class="actor">
+        <button id="actApp" class="on">앱 롤</button>
+        <button id="actOwner">소유자</button>
+      </div>
+      <p class="sub" style="padding:8px 0 0; margin:0" id="actorNote"></p>
+    </div>
+
+    <div class="sec">
+      <h2>② 방어를 켠다</h2>
+      <div class="tog" data-def="u"><div class="box">✓</div>
+        <div class="lbl">UPDATE 트리거<br><code>BEFORE UPDATE FOR EACH ROW</code></div></div>
+      <div class="tog" data-def="d"><div class="box">✓</div>
+        <div class="lbl">DELETE 트리거<br><code>BEFORE DELETE FOR EACH ROW</code></div></div>
+      <div class="tog" data-def="t"><div class="box">✓</div>
+        <div class="lbl">TRUNCATE 트리거<br><code>BEFORE TRUNCATE FOR EACH STATEMENT</code></div></div>
+      <div class="tog" data-def="role"><div class="box">✓</div>
+        <div class="lbl">앱 롤 권한 제한<br><code>GRANT INSERT, SELECT ONLY</code></div></div>
+    </div>
+
+    <div class="sec">
+      <h2>③ 공격을 쏜다</h2>
+      <button class="atk" data-atk="update">UPDATE agent_events SET …
+        <small>어제 기록의 cost 를 0 으로 바꾼다</small></button>
+      <button class="atk" data-atk="delete">DELETE FROM agent_events
+        <small>줄을 하나씩 지운다</small></button>
+      <button class="atk" data-atk="truncate">TRUNCATE agent_events
+        <small>표를 통째로 비운다</small></button>
+      <button class="atk" data-atk="drop">SELECT drop_chunks(…)
+        <small>가장 오래된 서랍을 파일째 지운다</small></button>
+    </div>
+
+    <div class="sec">
+      <h2>함정 · 리셋</h2>
+      <div class="util">
+        <button id="trap">흔한 실수 재현</button>
+        <button id="reset">처음으로</button>
+      </div>
+    </div>
+
+    <div id="streak"><span>연속 정답</span><span><b id="streakN">0</b> · 최고 <span id="bestN">0</span></span></div>
+  </div>
+
+  <!-- ── 3D 무대 ── -->
+  <div id="stage">
+    <div id="canvasWrap"></div>
+    <div id="labels"></div>
+    <div id="hint">드래그 = 회전 · 휠 = 확대</div>
+
+    <div id="predict">
+      <div class="card">
+        <div class="eyebrow">예측 후 공개 — 답을 보기 전에 먼저 정한다</div>
+        <h3 id="pTitle"></h3>
+        <div class="q" id="pSql"></div>
+        <div class="ctx" id="pCtx"></div>
+        <div class="choices">
+          <button data-guess="blocked">막힌다</button>
+          <button data-guess="passed">통과한다</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="result">
+      <div class="verdict" id="rVerdict"></div>
+      <div class="guess" id="rGuess"></div>
+      <div class="sql" id="rSql"></div>
+      <div class="why" id="rWhy"></div>
+      <div class="cite" id="rCite"></div>
+      <button class="close" id="rClose">닫기</button>
+    </div>
+
+    <div id="toast"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+"use strict";
+
+// ═══════════════════════════════════════════════════════════════
+// 1. 상태 — 하드코딩된 결과는 없다. 전부 judge() 가 계산한다.
+// ═══════════════════════════════════════════════════════════════
+
+var CHUNKS = [
+  { name: "_hyper_1_1_chunk", range: "07-28 ~ 07-29", rows: 6, alive: true, tampered: false },
+  { name: "_hyper_1_2_chunk", range: "07-29 ~ 07-30", rows: 6, alive: true, tampered: false },
+  { name: "_hyper_1_3_chunk", range: "07-30 ~ 07-31", rows: 6, alive: true, tampered: false }
+];
+
+var state = {
+  chunks: JSON.parse(JSON.stringify(CHUNKS)),
+  def: { u: false, d: false, t: false, role: false },
+  actor: "app",           // 'app' | 'owner'
+  streak: 0,
+  best: 0,
+  pending: null           // 예측 대기 중인 공격
+};
+
+function totalRows() {
+  return state.chunks.reduce(function (s, c) { return s + (c.alive ? c.rows : 0); }, 0);
+}
+function aliveChunks() {
+  return state.chunks.filter(function (c) { return c.alive; });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 2. 판정 규칙 — 이 시뮬레이터의 심장
+//    각 문이 어느 방어에 걸리는지가 여기 한 곳에만 적혀 있다.
+// ═══════════════════════════════════════════════════════════════
+
+var ATTACKS = {
+  update: {
+    title: "UPDATE — 기록을 고친다",
+    sql: "UPDATE agent_events\n   SET cost_usd = 0\n WHERE ts < now() - INTERVAL '1 day';",
+    kind: "dml"
+  },
+  delete: {
+    title: "DELETE — 줄을 지운다",
+    sql: "DELETE FROM agent_events\n WHERE ts < now() - INTERVAL '1 day';",
+    kind: "dml"
+  },
+  truncate: {
+    title: "TRUNCATE — 표를 비운다",
+    sql: "TRUNCATE agent_events;",
+    kind: "dml"
+  },
+  drop: {
+    title: "drop_chunks() — 서랍을 파일째 버린다",
+    sql: "SELECT drop_chunks('agent_events',\n                    older_than => INTERVAL '2 days');",
+    kind: "ddl"
+  }
+};
+
+// 반환: { blocked, by, why, cite }
+function judge(atk, def, actor) {
+  // ── 1층: 권한. 트리거보다 먼저 걸린다 ──
+  // 앱 롤에게 INSERT/SELECT 만 줬다면 나머지는 시도조차 못 한다.
+  // 소유자는 이 제한의 대상이 아니다 — 그래서 소유자 계정이면 이 층이 통째로 없다.
+  if (actor === "app" && def.role) {
+    return {
+      blocked: true, by: "role",
+      why: "앱 롤에게는 <em>INSERT 와 SELECT 권한만</em> 있다. 트리거가 발동할 기회조차 없이 " +
+           "권한 단계에서 거부됐다. <em>트리거보다 먼저 걸리는 층</em>이다.<br><br>" +
+           "이 층이 지키는 시나리오: <em>앱 자격증명이 유출돼도</em> 감사 로그는 남는다.",
+      cite: "두 층이 막는 것이 다르다 — 롤은 “그럴 자격이 없다”, 트리거는 “그 동작을 허용하지 않는다”."
+    };
+  }
+
+  // ── 2층: 트리거 ──
+  if (atk === "update") {
+    return def.u
+      ? { blocked: true, by: "trigger",
+          why: "<em>BEFORE UPDATE … FOR EACH ROW</em> 트리거가 각 줄마다 발동해 예외를 던졌다. " +
+               "UPDATE 는 “이 줄을 바꿔라”라는 row 단위 동작이라 row-level 트리거가 정확히 맞는다.",
+          cite: "하이퍼테이블에 건 트리거는 chunk 로 전파된다 — “TimescaleDB propagates the change to every chunk.” (Tiger Docs)" }
+      : { blocked: false, by: null,
+          why: "막는 것이 없어 <em>기록이 조용히 바뀌었다.</em> 에러도, 흔적도 없다.<br><br>" +
+               "감사 로그에서 가장 위험한 건 삭제가 아니라 <em>수정</em>이다. 삭제는 “없다”가 눈에 띄지만, " +
+               "수정된 로그는 그럴싸한 얼굴로 남아 있다.",
+          cite: "수정 가능한 감사 로그는 감사 로그가 아니다. 그래서 INV-4 는 수정과 삭제를 함께 막는다." };
+  }
+
+  if (atk === "delete") {
+    return def.d
+      ? { blocked: true, by: "trigger",
+          why: "<em>BEFORE DELETE … FOR EACH ROW</em> 트리거가 발동했다. DELETE 도 row 단위 동작이다.",
+          cite: "UPDATE 와 DELETE 는 같은 모양의 방어로 막힌다. 여기서 멈추면 뚫린다 — 문이 둘 더 있다." }
+      : { blocked: false, by: null,
+          why: "줄이 하나씩 지워졌다. 서랍(chunk)은 그대로 남고 <em>내용만</em> 빠진다.",
+          cite: "DELETE 는 느리다 — 줄마다 지우고 나중에 청소(VACUUM)가 필요하다. 그래서 문 ④ 가 존재한다." };
+  }
+
+  if (atk === "truncate") {
+    if (def.t) {
+      return { blocked: true, by: "trigger",
+        why: "<em>BEFORE TRUNCATE … FOR EACH STATEMENT</em> 트리거가 발동했다.<br><br>" +
+             "이 트리거는 <em>FOR EACH ROW 로 쓸 수 없다.</em> TRUNCATE 는 줄을 하나씩 보지 않기 때문이다.",
+        cite: "“Triggers on TRUNCATE may only be defined at statement level, not per-row.” — PostgreSQL Docs, CREATE TRIGGER" };
+    }
+    // 여기가 하이라이트: DELETE 트리거가 켜져 있어도 통과한다
+    var trap = def.d
+      ? "<em>DELETE 트리거를 켜 뒀는데도 통과했다.</em> 직관에 반하지만 문서가 명시한다 — " +
+        "TRUNCATE 는 ON DELETE 트리거를 <em>발동시키지 않는다.</em><br><br>"
+      : "";
+    return { blocked: false, by: null,
+      why: trap + "모든 서랍이 <em>한 번에 비워졌다.</em> 서랍 자체는 남아 있다 — 내용만 사라졌다.<br><br>" +
+           "TRUNCATE 는 DELETE 를 여러 번 하는 게 아니라 <em>완전히 다른 명령</em>이다.",
+      cite: "“TRUNCATE will not fire any ON DELETE triggers that might exist for the tables. " +
+            "But it will fire ON TRUNCATE triggers.” — PostgreSQL Docs, TRUNCATE" };
+  }
+
+  if (atk === "drop") {
+    // 어떤 DML 트리거도 이걸 막지 못한다. 원리적으로.
+    var allOn = def.u && def.d && def.t;
+    return { blocked: false, by: null,
+      why: (allOn ? "<em>트리거를 셋 다 켰는데도 통과했다.</em> 빠뜨린 게 아니다 — " : "") +
+           "<code>drop_chunks()</code> 는 줄을 지우는 게 아니라 <em>chunk 테이블 자체를 DROP</em> 하는 " +
+           "DDL 이다. 줄에는 아무 일도 일어나지 않는다. 서랍이 통째로 사라진다.<br><br>" +
+           "DML 트리거는 “줄에 무슨 일이 일어날 때” 발동한다. 여기엔 발동할 사건이 없다 — " +
+           "<em>트리거가 도달할 수 없는 층</em>이다. 남은 방어는 권한뿐이다.",
+      cite: "“dropping data by the chunk is faster, because it deletes an entire file from disk.” — Tiger Docs, Understand data retention" };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 3. 공격 적용 — 판정이 통과일 때 상태를 실제로 바꾼다
+// ═══════════════════════════════════════════════════════════════
+
+function applyAttack(atk) {
+  var live = aliveChunks();
+  if (atk === "update") {
+    // 가장 오래된 서랍의 기록이 변조된다
+    if (live.length) live[0].tampered = true;
+  } else if (atk === "delete") {
+    if (live.length) live[0].rows = 0;
+  } else if (atk === "truncate") {
+    live.forEach(function (c) { c.rows = 0; });
+  } else if (atk === "drop") {
+    if (live.length) live[0].alive = false;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 4. 3D 무대
+// ═══════════════════════════════════════════════════════════════
+
+var wrap = document.getElementById("canvasWrap");
+var scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0f1620);
+scene.fog = new THREE.Fog(0x0f1620, 22, 46);
+
+var camera = new THREE.PerspectiveCamera(46, 1, 0.1, 200);
+var renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+wrap.appendChild(renderer.domElement);
+
+// 조명
+scene.add(new THREE.AmbientLight(0x8fa8c4, 0.55));
+var sun = new THREE.DirectionalLight(0xffffff, 0.95);
+sun.position.set(9, 16, 8);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024, 1024);
+sun.shadow.camera.left = -18; sun.shadow.camera.right = 18;
+sun.shadow.camera.top = 18; sun.shadow.camera.bottom = -18;
+scene.add(sun);
+
+// 바닥
+var ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(80, 80),
+  new THREE.MeshPhongMaterial({ color: 0x1b2838, flatShading: true, shininess: 2 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -0.01;
+ground.receiveShadow = true;
+scene.add(ground);
+var grid = new THREE.GridHelper(80, 40, 0x2c3e55, 0x223146);
+grid.material.opacity = 0.5; grid.material.transparent = true;
+scene.add(grid);
+
+// ── 하이퍼테이블 "가면" — 데이터가 없는 논리 테이블 ──
+var maskGroup = new THREE.Group();
+var mask = new THREE.Mesh(
+  new THREE.BoxGeometry(13.5, 1.5, 0.35),
+  new THREE.MeshPhongMaterial({ color: 0x5aa9ff, flatShading: true, shininess: 3,
+                                transparent: true, opacity: 0.34 })
+);
+mask.position.set(0, 3.4, -3.6);
+maskGroup.add(mask);
+[-6.2, 6.2].forEach(function (x) {
+  var post = new THREE.Mesh(
+    new THREE.BoxGeometry(0.3, 3.4, 0.3),
+    new THREE.MeshPhongMaterial({ color: 0x3a5678, flatShading: true, shininess: 2 })
+  );
+  post.position.set(x, 1.7, -3.6); post.castShadow = true;
+  maskGroup.add(post);
+});
+scene.add(maskGroup);
+
+// ── 서랍(chunk) ──
+var MAT = {
+  base:  new THREE.MeshPhongMaterial({ color: 0x35506f, flatShading: true, shininess: 2 }),
+  wall:  new THREE.MeshPhongMaterial({ color: 0x46688c, flatShading: true, shininess: 2 }),
+  row:   new THREE.MeshPhongMaterial({ color: 0x3ecf8e, flatShading: true, shininess: 4 }),
+  tamp:  new THREE.MeshPhongMaterial({ color: 0xff6b6b, flatShading: true, shininess: 4 })
+};
+
+var drawers = [];   // { group, rowMeshes[], idx }
+var SPACING = 4.6;
+
+function buildDrawer(i) {
+  var g = new THREE.Group();
+  var x = (i - 1) * SPACING;
+  g.position.set(x, 0, 0);
+
+  // 받침
+  var base = new THREE.Mesh(new THREE.BoxGeometry(4, 0.45, 3.2), MAT.base);
+  base.position.y = 0.22; base.castShadow = true; base.receiveShadow = true;
+  g.add(base);
+
+  // 서랍 벽 4개 (열린 상자)
+  var wallMats = [
+    { geo: [4, 0.85, 0.22], pos: [0, 0.87, 1.5] },
+    { geo: [4, 0.85, 0.22], pos: [0, 0.87, -1.5] },
+    { geo: [0.22, 0.85, 3.2], pos: [1.9, 0.87, 0] },
+    { geo: [0.22, 0.85, 3.2], pos: [-1.9, 0.87, 0] }
+  ];
+  wallMats.forEach(function (w) {
+    var m = new THREE.Mesh(new THREE.BoxGeometry(w.geo[0], w.geo[1], w.geo[2]), MAT.wall);
+    m.position.set(w.pos[0], w.pos[1], w.pos[2]);
+    m.castShadow = true; m.receiveShadow = true;
+    g.add(m);
+  });
+
+  // 행 큐브 6개 (3열 × 2행)
+  var rowMeshes = [];
+  for (var r = 0; r < 6; r++) {
+    var col = r % 3, row = Math.floor(r / 3);
+    var m = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.62, 0.95), MAT.row);
+    m.position.set((col - 1) * 1.15, 0.76, (row - 0.5) * 1.25);
+    m.castShadow = true;
+    g.add(m);
+    rowMeshes.push(m);
+  }
+
+  scene.add(g);
+  drawers.push({ group: g, rows: rowMeshes, idx: i });
+}
+for (var i = 0; i < 3; i++) buildDrawer(i);
+
+// ── HTML 라벨 ──
+var labelsEl = document.getElementById("labels");
+var labels = [];
+function makeLabel(cls) {
+  var el = document.createElement("div");
+  el.className = "lab" + (cls ? " " + cls : "");
+  labelsEl.appendChild(el);
+  return el;
+}
+var maskLabel = makeLabel("dim");
+var drawerLabels = [makeLabel(), makeLabel(), makeLabel()];
+
+function updateLabels() {
+  var v = new THREE.Vector3();
+  function place(el, x, y, z) {
+    v.set(x, y, z).project(camera);
+    var w = wrap.clientWidth, h = wrap.clientHeight;
+    el.style.left = ((v.x * 0.5 + 0.5) * w) + "px";
+    el.style.top = ((-v.y * 0.5 + 0.5) * h) + "px";
+    el.style.display = (v.z > 1) ? "none" : "block";
+  }
+  maskLabel.innerHTML = "agent_events &nbsp;<b>" + totalRows() + " rows</b> &nbsp;· 논리 테이블 (데이터 0)";
+  place(maskLabel, 0, 4.5, -3.6);
+
+  state.chunks.forEach(function (c, i) {
+    var el = drawerLabels[i];
+    if (!c.alive) { el.style.display = "none"; return; }
+    el.className = "lab" + (c.tampered ? "" : " dim");
+    el.innerHTML = c.name.replace("_hyper_1_", "chunk ").replace("_chunk", "") +
+                   " &nbsp;<b>" + c.rows + "</b> rows" +
+                   (c.tampered ? " &nbsp;⚠️ 변조됨" : "") +
+                   "<br>" + c.range;
+    place(el, (i - 1) * SPACING, 2.5, 0);
+  });
+}
+
+// ── 카메라 컨트롤 (직접 구현 — OrbitControls 는 버전마다 깨진다) ──
+var cam = { az: -0.42, el: 0.62, r: 19, tx: 0, ty: 1.2, tz: 0 };
+function applyCam() {
+  camera.position.set(
+    cam.tx + cam.r * Math.cos(cam.el) * Math.sin(cam.az),
+    cam.ty + cam.r * Math.sin(cam.el),
+    cam.tz + cam.r * Math.cos(cam.el) * Math.cos(cam.az)
+  );
+  camera.lookAt(cam.tx, cam.ty, cam.tz);
+}
+var dragging = false, lastX = 0, lastY = 0;
+renderer.domElement.addEventListener("pointerdown", function (e) {
+  dragging = true; lastX = e.clientX; lastY = e.clientY;
+  renderer.domElement.setPointerCapture(e.pointerId);
+});
+renderer.domElement.addEventListener("pointermove", function (e) {
+  if (!dragging) return;
+  cam.az -= (e.clientX - lastX) * 0.006;
+  cam.el += (e.clientY - lastY) * 0.005;
+  cam.el = Math.max(0.12, Math.min(1.35, cam.el));
+  lastX = e.clientX; lastY = e.clientY;
+  applyCam();
+});
+renderer.domElement.addEventListener("pointerup", function (e) {
+  dragging = false;
+  try { renderer.domElement.releasePointerCapture(e.pointerId); } catch (err) {}
+});
+renderer.domElement.addEventListener("wheel", function (e) {
+  e.preventDefault();
+  cam.r = Math.max(9, Math.min(34, cam.r + e.deltaY * 0.016));
+  applyCam();
+}, { passive: false });
+
+function resize() {
+  var w = wrap.clientWidth, h = wrap.clientHeight;
+  renderer.setSize(w, h);
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener("resize", resize);
+
+// ═══════════════════════════════════════════════════════════════
+// 5. 애니메이션 — 상태를 3D 에 반영
+// ═══════════════════════════════════════════════════════════════
+
+var anims = [];   // { obj, kind, t, dur, from, to }
+function animate(obj, kind, dur, from, to) {
+  anims.push({ obj: obj, kind: kind, t: 0, dur: dur, from: from, to: to });
+}
+
+var shake = { t: 0, target: null };
+
+function syncScene(instant) {
+  state.chunks.forEach(function (c, i) {
+    var d = drawers[i];
+    // 서랍 자체의 생사
+    var targetY = c.alive ? 0 : -3.2;
+    if (instant) { d.group.position.y = targetY; d.group.visible = c.alive; }
+    else if (!c.alive && d.group.position.y > -3) {
+      animate(d.group, "sink", 700, d.group.position.y, targetY);
+    }
+    // 행 큐브
+    d.rows.forEach(function (m, ri) {
+      var shouldShow = ri < c.rows;
+      m.material = c.tampered ? MAT.tamp : MAT.row;
+      if (instant) { m.visible = shouldShow; m.scale.set(1, 1, 1); }
+      else if (!shouldShow && m.visible && m.scale.y > 0.05) {
+        animate(m, "vanish", 420 + ri * 55, 1, 0);
+      } else if (shouldShow && !m.visible) {
+        m.visible = true; m.scale.set(1, 1, 1);
+      }
+    });
+  });
+}
+
+function tick() {
+  requestAnimationFrame(tick);
+  var now = performance.now();
+  if (!tick.prev) tick.prev = now;
+  var dt = Math.min(50, now - tick.prev); tick.prev = now;
+
+  for (var i = anims.length - 1; i >= 0; i--) {
+    var a = anims[i];
+    a.t += dt;
+    var p = Math.min(1, a.t / a.dur);
+    var e = 1 - Math.pow(1 - p, 3);
+    if (a.kind === "vanish") {
+      a.obj.scale.set(1 - e, 1 - e, 1 - e);
+      a.obj.position.y = 0.76 + e * 1.6;
+      if (p >= 1) { a.obj.visible = false; a.obj.position.y = 0.76; a.obj.scale.set(1,1,1); }
+    } else if (a.kind === "sink") {
+      a.obj.position.y = a.from + (a.to - a.from) * e;
+      if (p >= 1) a.obj.visible = false;
+    }
+    if (p >= 1) anims.splice(i, 1);
+  }
+
+  if (shake.t > 0) {
+    shake.t -= dt;
+    var s = Math.max(0, shake.t / 300);
+    if (shake.target) shake.target.position.x = shake.target.userData.baseX + Math.sin(now * 0.05) * 0.09 * s;
+    if (shake.t <= 0 && shake.target) shake.target.position.x = shake.target.userData.baseX;
+  }
+
+  updateLabels();
+  renderer.render(scene, camera);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 6. UI 배선
+// ═══════════════════════════════════════════════════════════════
+
+var elToast = document.getElementById("toast");
+var toastTimer = null;
+function toast(msg) {
+  elToast.textContent = msg;
+  elToast.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { elToast.classList.remove("show"); }, 2600);
+}
+
+function renderDefs() {
+  document.querySelectorAll(".tog").forEach(function (el) {
+    el.classList.toggle("on", !!state.def[el.dataset.def]);
+  });
+  document.getElementById("actApp").classList.toggle("on", state.actor === "app");
+  document.getElementById("actOwner").classList.toggle("on", state.actor === "owner");
+  document.getElementById("actorNote").innerHTML = state.actor === "app"
+    ? "앱이 붙는 계정. <b>권한 제한이 걸리는 대상.</b>"
+    : "테이블 소유자. <b>권한 제한의 대상이 아니다</b> — 롤 방어가 통째로 무효.";
+  document.getElementById("streakN").textContent = state.streak;
+  document.getElementById("bestN").textContent = state.best;
+}
+
+document.querySelectorAll(".tog").forEach(function (el) {
+  el.addEventListener("click", function () {
+    state.def[el.dataset.def] = !state.def[el.dataset.def];
+    renderDefs();
+  });
+});
+document.getElementById("actApp").addEventListener("click", function () {
+  state.actor = "app"; renderDefs();
+});
+document.getElementById("actOwner").addEventListener("click", function () {
+  state.actor = "owner"; renderDefs();
+});
+
+// ── 예측 → 실행 ──
+var elPredict = document.getElementById("predict");
+document.querySelectorAll(".atk").forEach(function (btn) {
+  btn.addEventListener("click", function () {
+    var atk = btn.dataset.atk;
+    if (totalRows() === 0 && aliveChunks().length === 0) {
+      toast("남은 게 없다. '처음으로' 를 눌러 리셋하자."); return;
+    }
+    state.pending = atk;
+    var a = ATTACKS[atk];
+    document.getElementById("pTitle").textContent = a.title;
+    document.getElementById("pSql").textContent = a.sql;
+    var onDefs = [];
+    if (state.def.u) onDefs.push("UPDATE 트리거");
+    if (state.def.d) onDefs.push("DELETE 트리거");
+    if (state.def.t) onDefs.push("TRUNCATE 트리거");
+    if (state.def.role) onDefs.push("롤 권한 제한");
+    document.getElementById("pCtx").innerHTML =
+      "접속: <b>" + (state.actor === "app" ? "앱 롤" : "소유자") + "</b> · 켜진 방어: " +
+      (onDefs.length ? "<b>" + onDefs.join(", ") + "</b>" : "<b>없음</b>") +
+      "<br>지금 남은 행: <b>" + totalRows() + "</b>, 살아있는 서랍: <b>" + aliveChunks().length + "</b>";
+    elPredict.classList.add("show");
+  });
+});
+
+document.querySelectorAll(".choices button").forEach(function (b) {
+  b.addEventListener("click", function () {
+    var guess = b.dataset.guess;             // 'blocked' | 'passed'
+    var atk = state.pending;
+    elPredict.classList.remove("show");
+    runAttack(atk, guess);
+  });
+});
+
+var elResult = document.getElementById("result");
+document.getElementById("rClose").addEventListener("click", function () {
+  elResult.classList.remove("show");
+});
+
+function runAttack(atk, guess) {
+  var verdict = judge(atk, state.def, state.actor);
+  var correct = (guess === "blocked") === verdict.blocked;
+
+  if (correct) {
+    state.streak += 1;
+    if (state.streak > state.best) state.best = state.streak;
+  } else {
+    state.streak = 0;
+  }
+
+  var before = totalRows(), beforeChunks = aliveChunks().length;
+  if (!verdict.blocked) applyAttack(atk);
+  syncScene(false);
+
+  var after = totalRows(), afterChunks = aliveChunks().length;
+
+  document.getElementById("rVerdict").textContent =
+    verdict.blocked ? "🛡  막혔다" : "💥  통과했다";
+  document.getElementById("rVerdict").className = "verdict " + (verdict.blocked ? "ok" : "bad");
+  document.getElementById("rGuess").innerHTML =
+    (correct ? "✔ 예측 적중" : "✘ 예측이 틀렸다") +
+    " — 네 예측: " + (guess === "blocked" ? "막힌다" : "통과한다") +
+    " · 연속 " + state.streak;
+  document.getElementById("rSql").textContent = ATTACKS[atk].sql;
+
+  var impact = "";
+  if (!verdict.blocked) {
+    if (atk === "update") impact = "<br><br>피해: 행 수는 그대로 <b>" + after + "</b> — 하지만 서랍 하나의 기록이 <b>변조</b>됐다. 겉으로는 아무 일도 없어 보인다.";
+    else if (beforeChunks !== afterChunks) impact = "<br><br>피해: 서랍 <b>" + (beforeChunks - afterChunks) + "개가 사라졌다</b> (" + beforeChunks + " → " + afterChunks + "). 행은 " + before + " → " + after + ".";
+    else impact = "<br><br>피해: 행 <b>" + (before - after) + "개가 사라졌다</b> (" + before + " → " + after + "). 서랍은 " + afterChunks + "개 그대로 — <b>비었을 뿐 남아 있다.</b>";
+  }
+  document.getElementById("rWhy").innerHTML = verdict.why + impact;
+  document.getElementById("rCite").innerHTML = verdict.cite;
+  elResult.classList.add("show");
+
+  renderDefs();
+  toast(verdict.blocked
+    ? (verdict.by === "role" ? "권한 단계에서 거부" : "트리거가 예외를 던짐")
+    : "방어를 통과했다");
+}
+
+// ── 함정 프리셋 · 리셋 ──
+document.getElementById("trap").addEventListener("click", function () {
+  state.chunks = JSON.parse(JSON.stringify(CHUNKS));
+  state.def = { u: true, d: true, t: false, role: false };
+  state.actor = "app";
+  syncScene(true);
+  renderDefs();
+  elResult.classList.remove("show");
+  toast("UPDATE·DELETE 트리거만 켰다. 이제 TRUNCATE 를 쏴 보자 — 막힐까?");
+});
+
+document.getElementById("reset").addEventListener("click", function () {
+  state.chunks = JSON.parse(JSON.stringify(CHUNKS));
+  state.def = { u: false, d: false, t: false, role: false };
+  state.actor = "app";
+  state.streak = 0;
+  anims.length = 0;
+  syncScene(true);
+  renderDefs();
+  elResult.classList.remove("show");
+  toast("처음 상태로 되돌렸다");
+});
+
+// ── 시작 ──
+drawers.forEach(function (d) { d.group.userData.baseX = d.group.position.x; });
+resize();
+applyCam();
+renderDefs();
+syncScene(true);
+tick();
+
+})();
+</script>
+</body>
+</html>
