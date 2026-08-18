@@ -1,0 +1,656 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sim 06 — 부분 실패 실험실</title>
+<style>
+:root{
+  --bg:#fffef9; --fg:#1a1a18; --muted:#6b6b63; --rule:#ddd9cc;
+  --accent:#8a2b1f; --accent-soft:#f5ece9; --code-bg:#f4f2ea;
+  --ok:#2d6a4a; --ok-soft:#e8f2ec; --warn:#8a5a00; --warn-soft:#faf1dd;
+  --dead:#9b988e;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#16161a; --fg:#e8e6df; --muted:#9b988e; --rule:#33333a;
+    --accent:#e8836f; --accent-soft:#2a1f1d; --code-bg:#1e1e24;
+    --ok:#7bc39a; --ok-soft:#1c2a23; --warn:#d9a441; --warn-soft:#2a2317;
+    --dead:#55555e;
+  }
+}
+*{box-sizing:border-box}
+html{font-size:16px}
+body{
+  background:var(--bg); color:var(--fg); margin:0 auto; max-width:60rem;
+  padding:2.5rem 1.25rem 6rem; line-height:1.6;
+  font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Apple SD Gothic Neo","Noto Serif KR",serif;
+}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+.eyebrow{font-family:ui-monospace,Menlo,monospace;font-size:.7rem;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--muted);margin:0 0 .5rem}
+h1{font-size:2rem;line-height:1.15;margin:0 0 .6rem;letter-spacing:-.02em}
+.subtitle{color:var(--muted);margin:0 0 2rem;font-size:1.02rem}
+h2{font-size:1.1rem;margin:2.2rem 0 .7rem;letter-spacing:-.01em}
+p{margin:0 0 .9rem}
+code{font-family:ui-monospace,Menlo,monospace;font-size:.85em;background:var(--code-bg);
+  padding:.1em .35em;border-radius:3px}
+a{color:var(--accent)}
+
+/* 레벨 바 */
+.levels{display:flex;flex-wrap:wrap;gap:.4rem;margin:0 0 1.2rem}
+.lv{font-family:ui-monospace,Menlo,monospace;font-size:.78rem;padding:.42rem .7rem;
+  border:1px solid var(--rule);border-radius:5px;background:var(--bg);color:var(--fg);
+  cursor:pointer;transition:.12s}
+.lv:hover{border-color:var(--accent)}
+.lv.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.lv.cleared::after{content:" ✓";color:var(--ok)}
+.lv.active.cleared::after{color:#fff}
+
+/* 패널 공통 */
+.panel{border:1px solid var(--rule);border-radius:7px;padding:1rem 1.1rem;margin:0 0 1.1rem}
+.panel h3{margin:0 0 .55rem;font-size:.95rem}
+.label{font-family:ui-monospace,Menlo,monospace;font-size:.66rem;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--muted);display:block;margin-bottom:.45rem}
+
+/* 예측 */
+.predict{background:var(--warn-soft);border-color:var(--warn)}
+.opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(11rem,1fr));gap:.45rem;margin:.6rem 0 0}
+.opt{padding:.55rem .7rem;border:1px solid var(--rule);border-radius:5px;background:var(--bg);
+  cursor:pointer;font-size:.9rem;text-align:left;color:var(--fg);font-family:inherit;transition:.12s}
+.opt:hover:not(:disabled){border-color:var(--accent)}
+.opt:disabled{cursor:default}
+.opt.picked{border-color:var(--accent);background:var(--accent-soft)}
+.opt.right{border-color:var(--ok);background:var(--ok-soft)}
+.opt.wrong{border-color:var(--accent);background:var(--accent-soft)}
+.streak{float:right;font-family:ui-monospace,Menlo,monospace;font-size:.78rem;color:var(--muted)}
+
+/* 파이프라인 */
+.clock{font-family:ui-monospace,Menlo,monospace;font-size:.8rem;color:var(--muted);float:right}
+.pipe{display:grid;grid-template-columns:5.5rem 1fr 8.5rem;gap:.8rem;align-items:center}
+.pr-box,.sink{border:1px solid var(--rule);border-radius:6px;padding:.7rem .5rem;text-align:center;
+  font-family:ui-monospace,Menlo,monospace;font-size:.75rem;color:var(--muted)}
+.nodes{display:flex;flex-direction:column;gap:.4rem}
+.node{border:1px solid var(--rule);border-radius:6px;padding:.5rem .7rem;background:var(--bg);
+  display:grid;grid-template-columns:5.5rem 1fr 4.6rem 4.6rem;gap:.6rem;align-items:center;
+  font-family:ui-monospace,Menlo,monospace;font-size:.76rem;transition:.15s}
+.node .nm{font-weight:600}
+.bar{height:7px;background:var(--code-bg);border-radius:4px;overflow:hidden}
+.bar > i{display:block;height:100%;width:0;background:var(--muted);transition:width .08s linear}
+.node .tk,.node .el{text-align:right;color:var(--muted);font-size:.72rem}
+.node[data-s="done"]{border-color:var(--ok)}
+.node[data-s="done"] .bar > i{background:var(--ok)}
+.node[data-s="crashed"],.node[data-s="timeout"]{border-color:var(--accent);background:var(--accent-soft)}
+.node[data-s="crashed"] .bar > i,.node[data-s="timeout"] .bar > i{background:var(--accent)}
+.node[data-s="cancelled"]{border-color:var(--dead);opacity:.5}
+.node[data-s="cancelled"] .bar > i{background:var(--dead)}
+.node.orphan{border-style:dashed;border-color:var(--warn)}
+.node.orphan .bar > i{background:var(--warn)}
+.node.orphan .tk{color:var(--warn);font-weight:600}
+
+/* 컨트롤 */
+.ctrls{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:.9rem}
+.ctrl{font-size:.85rem}
+.ctrl > .label{margin-bottom:.3rem}
+select,input[type=number]{font-family:ui-monospace,Menlo,monospace;font-size:.8rem;
+  background:var(--bg);color:var(--fg);border:1px solid var(--rule);border-radius:4px;padding:.3rem .4rem;width:100%}
+.row{display:flex;align-items:center;gap:.45rem;margin-bottom:.3rem;font-family:ui-monospace,Menlo,monospace;font-size:.78rem}
+.row select{width:auto;flex:1}
+.row > span{width:4.6rem;color:var(--muted)}
+label.chk{display:flex;align-items:center;gap:.45rem;font-family:ui-monospace,Menlo,monospace;
+  font-size:.78rem;margin-bottom:.35rem;cursor:pointer}
+button.run{font-family:inherit;font-size:.95rem;padding:.6rem 1.4rem;border-radius:6px;
+  border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
+button.run:disabled{opacity:.4;cursor:not-allowed}
+button.ghost{font-family:inherit;font-size:.85rem;padding:.55rem 1rem;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg);color:var(--fg);cursor:pointer;margin-left:.4rem}
+
+/* 상자 */
+.box{display:grid;grid-template-columns:repeat(4,1fr);gap:.35rem;margin:.5rem 0 .8rem}
+.slot{border:1px solid var(--rule);border-radius:5px;padding:.5rem .55rem;
+  font-family:ui-monospace,Menlo,monospace;font-size:.72rem;min-height:4.6rem}
+.slot .who{color:var(--muted);font-size:.66rem;letter-spacing:.06em;text-transform:uppercase;
+  display:block;margin-bottom:.3rem}
+.slot.exc{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.slot.can{border-color:var(--dead);color:var(--dead);background:var(--code-bg)}
+.slot.emp{color:var(--warn)}
+.arrow{text-align:center;color:var(--muted);font-family:ui-monospace,Menlo,monospace;
+  font-size:.75rem;margin:.2rem 0 .5rem}
+pre{background:var(--code-bg);border:1px solid var(--rule);border-radius:6px;padding:.75rem .9rem;
+  overflow-x:auto;margin:0 0 .9rem;font-size:.78rem;line-height:1.55}
+pre .c{color:var(--muted);font-style:italic}
+pre .b{color:var(--accent)}
+pre .g{color:var(--ok)}
+
+/* 판정 */
+.verdict{border-radius:7px;padding:.9rem 1.1rem;margin:0 0 .9rem;border:1px solid}
+.verdict h3{margin:0 0 .3rem;font-size:1.05rem}
+.verdict .why{font-family:ui-monospace,Menlo,monospace;font-size:.78rem}
+.v-auto{border-color:var(--ok);background:var(--ok-soft)}
+.v-human{border-color:var(--warn);background:var(--warn-soft)}
+.v-bad{border-color:var(--accent);background:var(--accent-soft)}
+.truth{border-left:3px solid var(--accent);background:var(--accent-soft);padding:.75rem .95rem;
+  border-radius:0 5px 5px 0;margin:0 0 .9rem;font-size:.92rem}
+.hidden{display:none}
+table{width:100%;border-collapse:collapse;font-size:.82rem;margin:0 0 .8rem}
+th,td{text-align:left;padding:.4rem .5rem;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+.footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);
+  font-size:.85rem;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<p class="eyebrow">Sim 06 · M5 · 대응 레슨 0006</p>
+<h1>부분 실패 실험실</h1>
+<p class="subtitle">에이전트를 하나씩 죽여보고, 게이트가 무엇을 <em>믿는지</em> 본다.</p>
+
+<div class="levels" id="levels"></div>
+
+<div class="panel">
+  <span class="label">이번 레벨</span>
+  <p id="brief" style="margin:0"></p>
+</div>
+
+<div class="panel predict" id="predictPanel">
+  <span class="streak mono" id="streak">연속 0</span>
+  <span class="label">예측 — 실행 전에 먼저 찍는다</span>
+  <p style="margin:0 0 .2rem" id="predictQ">게이트가 어떻게 판정할까?</p>
+  <div class="opts" id="opts"></div>
+  <p id="predictFb" class="hidden" style="margin:.7rem 0 0;font-size:.9rem"></p>
+</div>
+
+<div class="panel">
+  <span class="clock mono" id="clock">t = 0 ms</span>
+  <span class="label">파이프라인</span>
+  <div class="pipe">
+    <div class="pr-box">PR #42<br>diff</div>
+    <div class="nodes" id="nodes"></div>
+    <div class="sink" id="sink">애그리게이터<br>→ 게이트</div>
+  </div>
+  <div style="margin-top:.9rem">
+    <button class="run" id="runBtn">실행</button>
+    <button class="ghost" id="resetBtn">되돌리기</button>
+  </div>
+</div>
+
+<div class="panel">
+  <span class="label">설정 — 레벨이 자동으로 맞춰준다. 직접 만져도 된다</span>
+  <div class="ctrls">
+    <div class="ctrl">
+      <span class="label">에이전트별 결과</span>
+      <div id="modeRows"></div>
+    </div>
+    <div class="ctrl">
+      <span class="label">팬인 방식 · 안전장치</span>
+      <div class="row"><span>팬인</span>
+        <select id="fanin">
+          <option value="default">gather() 기본값</option>
+          <option value="rex">gather(return_exceptions=True)</option>
+          <option value="tg">TaskGroup</option>
+          <option value="lg">LangGraph superstep</option>
+        </select>
+      </div>
+      <label class="chk"><input type="checkbox" id="cov"> 실패를 <b>값</b>으로 (커버리지 동봉)</label>
+      <label class="chk"><input type="checkbox" id="to"> 타임아웃
+        <input type="number" id="toMs" value="3000" step="500" min="500" style="width:5.5rem"> ms</label>
+      <label class="chk"><input type="checkbox" id="guard"> 빈 입력 가드 (막다른 길 없음)</label>
+    </div>
+  </div>
+</div>
+
+<div id="out" class="hidden">
+  <h2>애그리게이터가 실제로 받은 것</h2>
+  <p style="font-size:.9rem;color:var(--muted);margin:0 0 .3rem">
+    <code>gather()</code>가 돌려준 4칸 상자 — <strong>순서 = 입력 순서</strong>라서 칸 번호가 곧 이름이다.</p>
+  <div class="box" id="boxView"></div>
+  <div class="arrow" id="filterNote"></div>
+  <pre id="afterFilter"></pre>
+  <div id="verdictBox"></div>
+  <div id="truthBox"></div>
+  <h2>왜 이렇게 됐나</h2>
+  <div id="explain"></div>
+</div>
+
+<div class="footer">
+  <p><strong>게이트 정책은 게이트 안에만 있다</strong> — 임계값 <code>0.6</code>은 이 시뮬레이터에서
+  <code>gate()</code> 함수 안 한 곳에만 존재한다. 노드도 스키마도 그 숫자를 모른다.
+  판정 순서는 ① 커버리지 불완전 → 사람 ② critical 있음 → 사람 ③ 지적 0개 → 자동
+  ④ overall(=max confidence) ≥ 0.6 → 자동, 아니면 사람.</p>
+  <p><strong>overall 공식(max)은 잠정이다.</strong> 애그리게이터 병합 규칙(G6)은 아직 안 정했다 —
+  dedup 키와 severity 충돌 처리도 M5 브리핑에서 정한다. 여기선 레슨과 맞추려고 <code>max</code>를 쓴다.</p>
+  <p>대응 레슨: <a href="../lessons/0006-nobody-looked.html">Lesson 06 — "아무 문제 없음"과 "아무도 안 봄"</a></p>
+</div>
+
+<script>
+const AGENTS = ["security","quality","testing","docs"];
+
+const CATALOG = {
+  security:[{sev:"critical",cat:"sql-injection",file:"app.py",line:16,conf:.95}],
+  quality: [{sev:"medium",cat:"dead-code",file:"util.py",line:8,conf:.72},
+            {sev:"low",cat:"naming",file:"util.py",line:22,conf:.55}],
+  testing: [{sev:"high",cat:"missing-test",file:"app.py",line:16,conf:.81}],
+  docs:    [{sev:"informational",cat:"missing-docstring",file:"app.py",line:4,conf:.60}]
+};
+const DUR = {security:1200, quality:900, testing:1500, docs:600};
+const CRASH_AT = 400;
+const TOK_RATE = .42;      // 가상 ms 당 토큰
+const HANG_LIMIT = 15000;  // 이만큼 지나면 "영원히"로 판정
+const SPEED = 2.2;         // 실제 1ms 당 가상 ms
+
+const MODES = {normal:"정상 (findings 있음)", clean:"봤는데 0개", crash:"예외로 죽음", hang:"무한 대기"};
+
+const LEVELS = [
+ {id:"L1", name:"L1 기준선",
+  cfg:{modes:{security:"normal",quality:"normal",testing:"normal",docs:"normal"},
+       fanin:"rex", cov:true, to:true, toMs:3000, guard:true},
+  answer:"human",
+  brief:"넷 다 멀쩡하다. 아무것도 안 부순 상태에서 파이프라인이 어떻게 도는지부터 본다. security 가 critical 을 하나 찾는다.",
+  after:"critical 이 하나라도 있으면 게이트는 <b>무조건</b> 사람에게 넘긴다. confidence 가 0.95 로 아무리 높아도 그렇다 — 확신도는 <em>두 번째</em> 축이고 severity 가 첫 번째다."},
+
+ {id:"L2", name:"L2 고아 태스크",
+  cfg:{modes:{security:"crash",quality:"normal",testing:"normal",docs:"normal"},
+       fanin:"default", cov:false, to:true, toMs:3000, guard:true},
+  answer:"unreached",
+  brief:"security 만 400ms 에 예외를 던진다. 팬인은 <code>gather()</code> <b>기본값</b>. 나머지 셋의 진행 바와 토큰 카운터를 보라 — 예외가 튄 뒤에 무슨 일이 벌어지나?",
+  after:"공식 문서: <b>\"Other awaitables in the aws sequence won't be cancelled and will continue to run.\"</b> 예외는 즉시 위로 튀어 파이프라인을 끊었는데, 나머지 셋은 <b>취소되지 않고 계속 돌며 토큰을 태운다.</b> 결과를 받을 사람이 이미 없는데도. \"에러 났으니 다 멈췄겠지\"가 틀린 그림이라는 것."},
+
+ {id:"L3", name:"L3 거짓 자동 게시",
+  cfg:{modes:{security:"crash",quality:"clean",testing:"clean",docs:"clean"},
+       fanin:"rex", cov:false, to:true, toMs:3000, guard:true},
+  answer:"auto",
+  brief:"security 는 죽고, 나머지 셋은 <b>멀쩡히 보고 문제를 못 찾았다</b>. 팬인을 <code>return_exceptions=True</code> 로 바꿔서 프로그램이 안 죽게 했다. 이제 안전할까?",
+  after:"<b>이 시뮬레이터 전체가 이 장면을 위한 것이다.</b> 프로그램은 안 죽었고, 예외도 안 터졌고, 게이트는 자기가 아는 정보로 완벽하게 옳은 판단을 했다. 그런데 그 정보가 거짓이었다. <code>isinstance(r, Exception)</code> 로 걸러낸 순간 <b>\"security 가 안 봤다\"는 사실이 그 if 문 안에서 죽었다.</b>"},
+
+ {id:"L4", name:"L4 커버리지 동봉",
+  cfg:{modes:{security:"crash",quality:"clean",testing:"clean",docs:"clean"},
+       fanin:"rex", cov:true, to:true, toMs:3000, guard:true},
+  answer:"human",
+  brief:"L3 와 <b>딱 한 가지만</b> 다르다 — 노드가 실패를 예외로 던지지 않고 <code>{findings:[], failed:[\"security\"]}</code> 라는 <b>값</b>으로 내보낸다. 결과가 어떻게 달라지나?",
+  after:"findings 는 L3 와 똑같이 <code>[]</code> 다. 바뀐 건 <b>옆에 붙어온 명단</b> 하나뿐이고, 그것만으로 판정이 뒤집혔다. 게이트가 드디어 물어볼 수 있게 된 것 — <em>\"지적이 없다는 게 넷이 다 보고 없는 건가, 셋만 보고 없는 건가?\"</em>"},
+
+ {id:"L5", name:"L5 조용한 멈춤",
+  cfg:{modes:{security:"hang",quality:"normal",testing:"normal",docs:"normal"},
+       fanin:"rex", cov:true, to:false, toMs:3000, guard:true},
+  answer:"unreached",
+  brief:"security 가 LLM 에 요청을 보냈는데 <b>응답이 안 온다</b>. 에러도 안 난다. 그리고 타임아웃을 <b>껐다</b>. 커버리지 동봉은 켜져 있다 — 그거면 충분할까?",
+  after:"커버리지 동봉은 <b>실패한 노드</b>를 다룬다. 이 노드는 실패하지 않았다 — <b>아직 안 끝났을 뿐</b>이다. 파이썬 입장에서 이건 완벽히 정상인 대기 상태고, 그래서 아무 신호도 안 뜬다. 데드락도 아니다(순환이 없다). 증상은 하나 — DB 에 <code>status='running'</code> 인 리뷰가 영원히 남는다. <b>타임아웃만이 시간을 사건으로 바꾼다.</b> 다시 켜고 돌려보라."},
+
+ {id:"L6", name:"L6 superstep 롤백",
+  cfg:{modes:{security:"crash",quality:"normal",testing:"normal",docs:"normal"},
+       fanin:"lg", cov:false, to:true, toMs:3000, guard:true},
+  answer:"unreached",
+  brief:"이번엔 LangGraph 로 돌린다. security 만 죽고 나머지 셋은 멀쩡히 findings 를 냈다. 그 셋의 결과는 살아남을까?",
+  after:"공식 문서: <b>\"the entire superstep is transactional. If any of these branches raises an exception, none of the updates are applied to the state.\"</b> 성공한 셋의 결과까지 <b>통째로 롤백</b>된다. <code>return_exceptions=True</code> 로 \"셋이라도 건지자\"던 계획이 프레임워크 층에서 무효가 되는 것. 그래서 결론이 뒤집힌다 — <b>예외를 노드 밖으로 내보내면 안 된다.</b> 커버리지 동봉을 켜고 다시 돌려보라."},
+
+ {id:"L7", name:"L7 막다른 길",
+  cfg:{modes:{security:"crash",quality:"crash",testing:"crash",docs:"crash"},
+       fanin:"rex", cov:true, to:true, toMs:3000, guard:false},
+  answer:"aggcrash",
+  brief:"넷이 <b>전부</b> 죽었다. 커버리지도 동봉했으니 게이트가 \"넷 다 못 봤다\"를 알 수 있을 텐데 — 그 판정까지 도달할까? 빈 입력 가드가 <b>꺼져</b> 있다.",
+  after:"애그리게이터가 <code>max()</code> 를 빈 시퀀스에 부르고 죽었다. <b>실패를 다루는 코드가 실패하면 실패를 다룰 곳이 사라진다.</b> 커버리지를 아무리 정성껏 모아도 그걸 읽을 게이트에 도달을 못 한다. 입력 0개는 예외 상황이 아니라 <b>정상 입력의 하나</b>다 — 가드를 켜면 <code>status='failed'</code> 로 <em>도착</em>한다. 그것도 결과다."},
+
+ {id:"SB", name:"샌드박스",
+  cfg:{modes:{security:"normal",quality:"normal",testing:"normal",docs:"normal"},
+       fanin:"rex", cov:true, to:true, toMs:3000, guard:true},
+  answer:null,
+  brief:"예측 없이 자유롭게. 조합을 바꿔가며 게이트가 언제 속는지 찾아보라. 특히 <b>커버리지 동봉을 켜면 팬인 방식 선택이 거의 무의미해진다</b>는 걸 확인해볼 것.",
+  after:""}
+];
+
+const VERDICT_OPTS = [
+  {k:"auto",     t:"자동으로 게시된다"},
+  {k:"human",    t:"사람 큐로 넘어간다"},
+  {k:"unreached",t:"게이트에 못 닿는다"},
+  {k:"aggcrash", t:"애그리게이터가 터진다"}
+];
+
+// ── 상태 ────────────────────────────────────────────
+let lv = 0, streak = 0, cleared = {}, picked = null, answered = false;
+let sim = null, raf = null;
+
+const $ = s => document.querySelector(s);
+const el = (t,c,h) => { const e=document.createElement(t); if(c)e.className=c; if(h!=null)e.innerHTML=h; return e; };
+
+// ── 설정 읽기/쓰기 ──────────────────────────────────
+function readCfg(){
+  const modes = {};
+  AGENTS.forEach(a => modes[a] = $("#m_"+a).value);
+  return {modes, fanin:$("#fanin").value, cov:$("#cov").checked,
+          to:$("#to").checked, toMs:+$("#toMs").value, guard:$("#guard").checked};
+}
+function writeCfg(c){
+  AGENTS.forEach(a => $("#m_"+a).value = c.modes[a]);
+  $("#fanin").value = c.fanin; $("#cov").checked = c.cov;
+  $("#to").checked = c.to; $("#toMs").value = c.toMs; $("#guard").checked = c.guard;
+}
+
+// ── 엔진 ────────────────────────────────────────────
+function newSim(cfg){
+  const nodes = {};
+  AGENTS.forEach(a => nodes[a] = {status:"pending", tokens:0, endT:null, orphan:false, prog:0});
+  return {t:0, cfg, nodes, phase:"fanout", firstFailT:null, result:null, stuck:false};
+}
+
+// 노드가 예외를 밖으로 던지는가 — 커버리지 동봉이 켜지면 안 던진다(값으로 바꾼다)
+const throwsOut = cfg => !cfg.cov;
+
+function settleNode(s, a){
+  const n = s.nodes[a], m = s.cfg.modes[a];
+  if(n.status !== "pending") return;
+  if(m === "crash" && s.t >= CRASH_AT){ n.status = "crashed"; n.endT = CRASH_AT; n.prog = 1; return; }
+  if(m === "hang"){
+    if(s.cfg.to && s.t >= s.cfg.toMs){ n.status = "timeout"; n.endT = s.cfg.toMs; n.prog = 1; }
+    else n.prog = Math.min(.93, s.t / (HANG_LIMIT * .55));
+    return;
+  }
+  if(m === "normal" || m === "clean"){
+    if(s.t >= DUR[a]){ n.status = "done"; n.endT = DUR[a]; n.prog = 1; }
+    else n.prog = s.t / DUR[a];
+  }
+}
+
+function tick(s, dt){
+  if(s.phase !== "fanout") return;
+  s.t += dt;
+  AGENTS.forEach(a => {
+    const n = s.nodes[a];
+    const was = n.status;
+    settleNode(s, a);
+    if(n.status === "pending") n.tokens += dt * TOK_RATE;
+    else if(was === "pending" && n.status !== "cancelled") n.tokens += 0;
+    if(was === "pending" && (n.status==="crashed"||n.status==="timeout") && s.firstFailT === null)
+      s.firstFailT = s.t;
+  });
+
+  const fail = AGENTS.some(a => ["crashed","timeout"].includes(s.nodes[a].status));
+
+  // TaskGroup: 첫 실패에 나머지를 취소
+  if(s.cfg.fanin === "tg" && throwsOut(s.cfg) && fail){
+    AGENTS.forEach(a => { if(s.nodes[a].status === "pending"){ s.nodes[a].status = "cancelled"; s.nodes[a].endT = s.t; }});
+  }
+  // gather 기본값: 예외가 즉시 위로 튀지만 나머지는 계속 돈다 → 고아
+  if(s.cfg.fanin === "default" && throwsOut(s.cfg) && fail){
+    AGENTS.forEach(a => { if(s.nodes[a].status === "pending") s.nodes[a].orphan = true; });
+  }
+
+  const allSettled = AGENTS.every(a => s.nodes[a].status !== "pending");
+  if(allSettled){ s.phase = "fanin"; finish(s); return; }
+  if(s.t > HANG_LIMIT){ s.stuck = true; s.phase = "fanin"; finish(s); }
+}
+
+function collect(s){
+  return AGENTS.map(a => {
+    const n = s.nodes[a], m = s.cfg.modes[a];
+    if(n.status === "done") return {kind:"value", findings: m === "clean" ? [] : CATALOG[a]};
+    if(n.status === "cancelled") return {kind:"cancelled"};
+    if(n.status === "pending")   return {kind:"pending"};
+    if(!throwsOut(s.cfg))        return {kind:"value", findings:[], failed:[a]};
+    return {kind:"exception", err: n.status === "timeout" ? "TimeoutError" : "RuntimeError"};
+  });
+}
+
+// 게이트 — 정책 상수는 여기에만 산다
+function gate(input){
+  const THRESHOLD = 0.6;
+  if(input.failed.length)
+    return {v:"human", why:`커버리지 불완전 — ${input.failed.join(", ")} 이(가) 안 봤다`, t:THRESHOLD};
+  if(input.findings.some(f => f.sev === "critical"))
+    return {v:"human", why:"critical 이 있다 — severity 가 첫 번째 축", t:THRESHOLD};
+  if(input.findings.length === 0)
+    return {v:"auto", why:"지적이 하나도 없다 — 넷 다 보고 없음", t:THRESHOLD};
+  const overall = Math.max(...input.findings.map(f => f.conf));
+  return overall >= THRESHOLD
+    ? {v:"auto",  why:`critical 없음 · overall ${overall.toFixed(2)} ≥ ${THRESHOLD}`, t:THRESHOLD, overall}
+    : {v:"human", why:`overall ${overall.toFixed(2)} < ${THRESHOLD}`, t:THRESHOLD, overall};
+}
+
+function finish(s){
+  const cfg = s.cfg, box = collect(s);
+  const r = {box, findings:[], completed:[], failed:[], verdict:null, why:"", overall:null, note:""};
+
+  if(s.stuck){
+    r.verdict = "unreached";
+    r.note = `가상 ${(HANG_LIMIT/1000).toFixed(0)}초가 지나도 끝나지 않는다. 팬인은 전부를 기다리므로 여기서 <b>영원히</b> 선다.`;
+    s.result = r; s.phase = "done"; return;
+  }
+  if(cfg.fanin === "default" && throwsOut(cfg) && s.firstFailT !== null){
+    r.verdict = "unreached";
+    r.note = `첫 예외가 <b>${s.firstFailT.toFixed(0)}ms</b> 에 위로 튀면서 팬인이 그 자리에서 끊겼다. 아래 상자는 <b>끝까지 돌았다면</b> 담겼을 값이고, 실제로는 아무도 안 읽는다.`;
+    s.result = r; s.phase = "done"; return;
+  }
+  if(cfg.fanin === "tg" && throwsOut(cfg) && s.firstFailT !== null){
+    r.verdict = "unreached";
+    r.note = `TaskGroup 은 첫 실패에 <b>나머지를 취소</b>했다 — 문서: "the remaining tasks in the group are cancelled". 그리고 <code>ExceptionGroup</code> 이 위로 던져져 애그리게이터에 도달하지 못한다.`;
+    s.result = r; s.phase = "done"; return;
+  }
+  if(cfg.fanin === "lg" && throwsOut(cfg) && s.firstFailT !== null){
+    r.verdict = "unreached";
+    r.note = `superstep 이 <b>트랜잭션</b>이라 통째로 롤백됐다. 성공한 노드의 결과도 state 에 하나도 안 남는다.`;
+    s.result = r; s.phase = "done"; return;
+  }
+
+  // 팬인 — 필터
+  box.forEach((slot, i) => {
+    const a = AGENTS[i];
+    if(slot.kind !== "value") return;          // ← continue. 여기서 실패 정보가 죽는다
+    r.findings.push(...slot.findings);
+    if(slot.failed) r.failed.push(...slot.failed);
+    else r.completed.push(a);
+  });
+
+  if(r.findings.length === 0 && !cfg.guard){
+    r.verdict = "aggcrash";
+    r.note = `애그리게이터가 <code>max(f.confidence for f in findings)</code> 를 <b>빈 시퀀스</b>에 불렀다 → <code>ValueError</code>. 게이트까지 못 간다.`;
+    s.result = r; s.phase = "done"; return;
+  }
+
+  const g = gate(r);
+  r.verdict = g.v; r.why = g.why; r.overall = g.overall ?? null;
+  s.result = r; s.phase = "done";
+}
+
+// 진실 — 실제로 diff 를 본 에이전트
+function truthOf(cfg){
+  const looked = AGENTS.filter(a => ["normal","clean"].includes(cfg.modes[a]));
+  return {looked, blind: AGENTS.filter(a => !looked.includes(a))};
+}
+
+// ── 렌더 ────────────────────────────────────────────
+function renderLevels(){
+  const box = $("#levels"); box.innerHTML = "";
+  LEVELS.forEach((L, i) => {
+    const b = el("button", "lv" + (i===lv?" active":"") + (cleared[L.id]?" cleared":""), L.name);
+    b.onclick = () => { lv = i; loadLevel(); };
+    box.appendChild(b);
+  });
+}
+
+function renderModeRows(){
+  const box = $("#modeRows"); box.innerHTML = "";
+  AGENTS.forEach(a => {
+    const row = el("div","row");
+    row.appendChild(el("span",null,a));
+    const sel = el("select"); sel.id = "m_" + a;
+    Object.entries(MODES).forEach(([k,v]) => {
+      const o = el("option",null,v); o.value = k; sel.appendChild(o);
+    });
+    sel.onchange = resetRun;
+    row.appendChild(sel); box.appendChild(row);
+  });
+}
+
+function renderNodes(){
+  const box = $("#nodes"); box.innerHTML = "";
+  AGENTS.forEach(a => {
+    const n = sim ? sim.nodes[a] : {status:"pending",tokens:0,prog:0,orphan:false};
+    const d = el("div","node" + (n.orphan ? " orphan" : ""));
+    d.dataset.s = n.status;
+    d.appendChild(el("span","nm",a));
+    const bar = el("div","bar"); const i = el("i"); i.style.width = (n.prog*100).toFixed(1)+"%";
+    bar.appendChild(i); d.appendChild(bar);
+    d.appendChild(el("span","el", n.endT != null ? n.endT.toFixed(0)+"ms" : (n.status==="pending" && sim ? sim.t.toFixed(0)+"ms" : "—")));
+    let tk = n.tokens > 0 ? "▲"+n.tokens.toFixed(0) : "";
+    if(n.orphan) tk += " 고아";
+    if(n.status === "cancelled") tk = "취소됨";
+    d.appendChild(el("span","tk", tk));
+    box.appendChild(d);
+  });
+  $("#clock").textContent = "t = " + (sim ? sim.t.toFixed(0) : 0) + " ms";
+}
+
+function renderPredict(){
+  const L = LEVELS[lv], box = $("#opts");
+  $("#streak").textContent = "연속 " + streak;
+  if(L.answer === null){ $("#predictPanel").classList.add("hidden"); return; }
+  $("#predictPanel").classList.remove("hidden");
+  box.innerHTML = "";
+  VERDICT_OPTS.forEach(o => {
+    const b = el("button","opt" + (picked===o.k?" picked":""), o.t);
+    b.disabled = answered;
+    if(answered){
+      if(o.k === L.answer) b.className = "opt right";
+      else if(o.k === picked) b.className = "opt wrong";
+    }
+    b.onclick = () => { picked = o.k; renderPredict(); $("#runBtn").disabled = false; };
+    box.appendChild(b);
+  });
+  $("#runBtn").disabled = !picked && !answered;
+}
+
+function slotHTML(slot, a){
+  if(slot.kind === "exception")
+    return `<span class="who">${a}</span>${slot.err}(…)`;
+  if(slot.kind === "cancelled")
+    return `<span class="who">${a}</span>CancelledError`;
+  if(slot.kind === "pending")
+    return `<span class="who">${a}</span>… 대기 중`;
+  if(slot.failed)
+    return `<span class="who">${a}</span>{findings: [],<br>&nbsp;failed: ["${slot.failed[0]}"]}`;
+  if(!slot.findings.length)
+    return `<span class="who">${a}</span>[]`;
+  return `<span class="who">${a}</span>` + slot.findings.map(f =>
+    `${f.sev.slice(0,4)} ${f.conf.toFixed(2)}`).join("<br>");
+}
+
+function renderOut(){
+  const r = sim.result, cfg = sim.cfg, L = LEVELS[lv];
+  $("#out").classList.remove("hidden");
+
+  const bv = $("#boxView"); bv.innerHTML = "";
+  r.box.forEach((slot, i) => {
+    const cls = slot.kind === "exception" ? "slot exc"
+              : slot.kind === "cancelled" ? "slot can"
+              : (slot.kind === "value" && !slot.findings.length && !slot.failed) ? "slot emp" : "slot";
+    bv.appendChild(el("div", cls, slotHTML(slot, AGENTS[i])));
+  });
+
+  const lost = r.box.filter(s => s.kind === "exception" || s.kind === "cancelled").length;
+  $("#filterNote").innerHTML = lost
+    ? `↓ 필터: <code>if isinstance(r, Exception): continue</code> &nbsp;— 칸 ${lost}개가 통째로 사라진다`
+    : `↓ 필터 — 버릴 예외가 없다`;
+
+  const covLine = cfg.cov
+    ? `completed = [${r.completed.map(x=>'"'+x+'"').join(", ")}]\nfailed    = [${r.failed.map(x=>'"'+x+'"').join(", ")}]`
+    : `<span class="c"># 커버리지 없음 — 누가 봤는지 아무 데도 안 적혀 있다</span>`;
+  $("#afterFilter").innerHTML =
+    `findings  = [${r.findings.map(f=>f.sev+" "+f.conf.toFixed(2)).join(", ")}]   <span class="c"># ${r.findings.length}개</span>\n` + covLine;
+
+  const V = {auto:["v-auto","자동 게시"], human:["v-human","사람 큐로"],
+             unreached:["v-bad","게이트 미도달"], aggcrash:["v-bad","애그리게이터 크래시"]};
+  const [vc, vt] = V[r.verdict];
+  $("#verdictBox").innerHTML =
+    `<div class="verdict ${vc}"><h3>${vt}</h3><p class="why" style="margin:0">${r.why || r.note}</p></div>`;
+
+  // 진실 대조
+  const T = truthOf(cfg);
+  const lying = r.verdict === "auto" && T.blind.length;
+  $("#truthBox").innerHTML = lying
+    ? `<div class="truth"><b>게이트가 믿은 것:</b> 넷 다 봤고 문제 없음<br>
+       <b>실제로 diff 를 본 에이전트:</b> ${T.looked.join(", ") || "없음"}<br>
+       <b>아무도 안 본 관점:</b> <span class="mono">${T.blind.join(", ")}</span><br><br>
+       <b>시스템이 방금 거짓말을 했다.</b> 아무 에러도 없이.</div>`
+    : (T.blind.length
+       ? `<div class="panel" style="font-size:.88rem">실제로 diff 를 본 에이전트: <b class="mono">${T.looked.join(", ")||"없음"}</b> ·
+          안 본 관점: <b class="mono">${T.blind.join(", ")}</b></div>` : "");
+
+  let ex = "";
+  if(r.note) ex += `<p>${r.note}</p>`;
+  if(L.after) ex += `<p>${L.after}</p>`;
+  if(r.verdict === "auto" || r.verdict === "human"){
+    ex += `<table><tr><th>게이트가 본 것</th><th>값</th></tr>` +
+      `<tr><td>failed (커버리지)</td><td class="mono">${cfg.cov ? "["+r.failed.join(", ")+"]" : "알 수 없음 — 안 넘어옴"}</td></tr>` +
+      `<tr><td>critical 포함</td><td class="mono">${r.findings.some(f=>f.sev==="critical") ? "예" : "아니오"}</td></tr>` +
+      `<tr><td>findings 개수</td><td class="mono">${r.findings.length}</td></tr>` +
+      `<tr><td>overall = max(conf)</td><td class="mono">${r.overall != null ? r.overall.toFixed(2) : "계산 안 함"}</td></tr>` +
+      `<tr><td>임계값 (게이트 안에만)</td><td class="mono">0.6</td></tr></table>`;
+  }
+  const orph = AGENTS.filter(a => sim.nodes[a].orphan);
+  if(orph.length){
+    const tk = orph.reduce((s,a)=>s+sim.nodes[a].tokens,0);
+    ex += `<p><b>고아 태스크 ${orph.length}개</b> (<span class="mono">${orph.join(", ")}</span>) 가
+      예외 이후에도 계속 돌며 <b class="mono">▲${tk.toFixed(0)}</b> 토큰을 더 태웠다. 결과는 아무도 안 읽는다.</p>`;
+  }
+  $("#explain").innerHTML = ex;
+
+  // 채점
+  if(L.answer && !answered){
+    answered = true;
+    const ok = picked === r.verdict;
+    if(ok){ streak++; cleared[L.id] = true; } else streak = 0;
+    $("#predictFb").classList.remove("hidden");
+    $("#predictFb").innerHTML = ok
+      ? `<b>맞음.</b> 아래 "왜 이렇게 됐나"에서 근거를 확인할 것.`
+      : `<b>아님.</b> 실제로는 <b>${VERDICT_OPTS.find(o=>o.k===r.verdict).t}</b>. 아래 설명을 읽고 다시 돌려보라.`;
+    renderPredict(); renderLevels();
+  }
+}
+
+// ── 실행 루프 ───────────────────────────────────────
+function loop(prev){
+  const now = performance.now();
+  const dt = Math.min(60, now - prev) * SPEED;
+  tick(sim, dt);
+  renderNodes();
+  if(sim.phase === "done"){ renderOut(); $("#runBtn").disabled = false; $("#runBtn").textContent = "다시 실행"; raf = null; return; }
+  raf = requestAnimationFrame(() => loop(now));
+}
+
+function run(){
+  if(raf) return;
+  const L = LEVELS[lv];
+  if(L.answer && !picked && !answered){ return; }
+  sim = newSim(readCfg());
+  $("#out").classList.add("hidden");
+  $("#runBtn").disabled = true; $("#runBtn").textContent = "도는 중…";
+  renderNodes();
+  raf = requestAnimationFrame(() => loop(performance.now()));
+}
+
+function resetRun(){
+  if(raf){ cancelAnimationFrame(raf); raf = null; }
+  sim = newSim(readCfg());
+  $("#out").classList.add("hidden");
+  $("#runBtn").disabled = LEVELS[lv].answer && !picked && !answered;
+  $("#runBtn").textContent = "실행";
+  renderNodes();
+}
+
+function loadLevel(){
+  const L = LEVELS[lv];
+  picked = null; answered = false;
+  writeCfg(JSON.parse(JSON.stringify(L.cfg)));
+  $("#brief").innerHTML = L.brief;
+  $("#predictFb").classList.add("hidden");
+  renderLevels(); renderPredict(); resetRun();
+}
+
+// ── 시작 ────────────────────────────────────────────
+renderModeRows();
+["fanin","cov","to","toMs","guard"].forEach(id => $("#"+id).onchange = resetRun);
+$("#runBtn").onclick = run;
+$("#resetBtn").onclick = resetRun;
+loadLevel();
+</script>
+</body>
+</html>

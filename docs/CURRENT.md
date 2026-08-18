@@ -3,7 +3,7 @@
 > 새 세션이 콜드 스타트할 때 **가장 먼저 읽는 파일.**
 > "지금 뭐가 진짜로 살아있고, 뭐가 스텁이고, 다음 한 걸음이 뭔가"만 적는다. 설계는 여기 안 적는다.
 
-**마지막 갱신**: 2026-08-14 · **M1 코드 완료, 테스트 미작성 · M0 독립검증 대기 · LLM 백엔드 로컬 프록시로 교체**
+**마지막 갱신**: 2026-08-19 · **M5 착수 — `engine.py` 스캐폴드까지 · M1 테스트 미작성 · M0 독립검증 대기**
 
 ---
 
@@ -52,6 +52,7 @@
 | `migrations/001_extensions.sql` | `timescaledb` + `vector`. `vectorscale`은 M7까지 안 요구 | ✅ 적용됨 |
 | `migrations/002_time.sql` | `agent_events` 하이퍼테이블 · `chunk_interval='1 day'` | ✅ 적용됨. 첫 INSERT 로 `chunks=1` 확인 |
 | `migrations/003_immutable.sql` | append-only 트리거 3개 (UPDATE·DELETE·TRUNCATE) | ✅ **완료 판정 통과** — 아래 |
+| `migrations/004_truth.sql` | `reviews` · `findings` · `hitl_decisions`. 평범한 테이블 | ✅ CHECK 5개 실측 통과 — 아래 |
 | `.env` | `DATABASE_URL` 추가 (로컬이라 비밀 아님) | ✅ |
 
 **INV-4 가 코드가 됐다** (2026-08-14). 실측:
@@ -66,6 +67,25 @@
 ⚠️ **①이 성공하는지도 같이 봐야 한다.** 넷 다 에러면 방어가 아니라 표가 죽은 것이고,
 "전부 에러 남" 만 보면 두 경우가 구분되지 않는다. 행 1개가 남은 것이 그 증거다.
 
+**`004_truth.sql` 도 실측으로 확인됐다** (2026-08-18):
+
+```
+① INSERT reviews    id=1 · status=queued · failed_agents={}        ✅ 살아있다
+② INSERT findings   id=1 · confidence=0.950                        ✅ 살아있다
+③ status='Posted'   ERROR: reviews_status_check                    ✅ 막힘
+④ line=0            ERROR: findings_line_check                     ✅ 막힘
+⑤ confidence=1.5    ERROR: findings_confidence_check               ✅ 막힘
+```
+
+004 에서 내린 설계 판단 셋 (근거는 파일 안 주석):
+- **`status` 8개 + `failed_agents TEXT[]` 분리** — "어디쯤 있나"와 "누가 죽었나"는 다른 질문이다.
+  한 컬럼에 겹치면 값이 곱해진다(에이전트 4개 → 실패 조합 15가지). **`partial` 과 `auto_posted`
+  를 가르는 것이 이 컬럼의 존재 이유** — G2 리스크가 여기서 처음 표현된다
+- **CHECK 를 건다** — Pydantic 과 중복이지만, 판단 기준은 "중복이냐"가 아니라
+  "DB 에 쓰는 경로가 앱 하나뿐이냐"다. 아니다(psql·백필·INSERT 코드)
+- **`hitl_decisions` 는 finding 단위 + `UNIQUE` 없음** — M9 의 "지적 중 몇 %가 맞았나"가
+  이 표에서만 나온다. 번복도 UPDATE 가 아니라 append 로 남긴다(INV-4 의 사고방식을 빌림)
+
 ⬜ **아직 안 막힌 문 두 개** — `drop_chunks()` 와 `DROP TABLE`. 트리거로는 원리적으로 못 막는다
 (Postgres 트리거 이벤트에 DROP 이 없다). `006_rbac.sql` 의 일이다.
 지금 `DATABASE_URL` 이 `postgres` 슈퍼유저라 **저 둘은 그냥 통과한다.**
@@ -77,9 +97,9 @@
 
 | | | 상태 |
 |---|---|---|
-| `learning/lessons/` | 레슨 5개 (01 스키마 · 02 인젝션 · 03 HMAC · 04 멱등성 · 05 삭제 문 4개) | ✅ |
-| `learning/sims/` | 시뮬 3개 — 0001 스키마 게이트 · 0002 인젝션 실습실 · 0005 네 개의 문 | ✅ 02~04 중 03·04 시뮬 없음 |
-| `learning/NOTEBOOK.md` | **사용자가 자기 말로 적는 곳.** Claude가 채우지 않는다 | ✅ Lesson 01 만 4/4 |
+| `learning/lessons/` | 레슨 **6개** (01 스키마 · 02 인젝션 · 03 HMAC · 04 멱등성 · 05 삭제 문 4개 · **06 부분 실패**) | ✅ |
+| `learning/sims/` | 시뮬 **6개** — 0001~0006 전부 | ✅ |
+| `learning/NOTEBOOK.md` | **사용자가 자기 말로 적는 곳.** Claude가 채우지 않는다 | ✅ **6/6 전부 4/4** (`/learn-check`) |
 | `.claude/skills/learn-check/` | 학습 사이클을 **파일로** 판정하는 프로젝트 스킬 | ✅ `/learn-check` 또는 `python3 .claude/skills/learn-check/scripts/check.py` |
 
 `CLAUDE.md`의 학습 사이클이 **읽기 → 만지기 → 적기 → 만들기** 4단계로 바뀌었다.
@@ -124,16 +144,51 @@ reasoning 162(47%). M6에서 에이전트 4개로 갈리면 이게 4배고, 프�
 
 ## 다음 한 걸음
 
-### 0. M2 이어가기 — `004_truth.sql`  ← **지금 여기**
+### 0. M5 — 멀티에이전트 배선  ← **지금 여기**
 
-`003` 까지 끝났다. 다음은 **진실 테이블** — `reviews`, `findings`, `hitl_decisions`.
-`agent_events` 와 달리 이들은 **상태가 바뀌고 id 로 조회**하므로 하이퍼테이블이 아니라 평범한 테이블이다.
-(왜 모양이 다른지는 [Lesson 05](../learning/lessons/0005-four-doors-to-delete.html) 0-a 절)
+⚠️ **M2 를 `004` 에서 멈춘다** (2026-08-18, 사용자 결정). **알고 하는 순서 변경이다.**
 
-그다음 `005_memory.sql` → `006_rbac.sql`.
-- **`005` 전에 G8 결정** 필요 (`code_chunks` 에 `repo_id`·`commit_sha` 박기)
-- **`006` 이 문 ④⑤ 를 막는다** — `drop_chunks`·`DROP TABLE`. 지금은 뚫려 있다
-- **`record_event()` 를 쓰기 전에 G9 결정** 필요 (payload 에 무엇을 넣나 — INV-4 때문에 영구적)
+| 미룬 것 | 언제 회수 | 왜 지금 안 하나 |
+|---|---|---|
+| `005_memory.sql` | **M7 직전** | RAG 전엔 아무도 안 읽는다. G8 결정도 그때 |
+| `006_rbac.sql` | **M8 직전** | 게이트 전엔 막을 게 없다. 문 ④⑤ 는 그때까지 뚫려 있다 |
+| `record_event()` (M3) | M6 이후 | G9 결정 필요 (payload 에 뭘 넣나 — INV-4 때문에 영구적) |
+| Redis 큐 (M4) | M8 직전 | M1 의 인메모리 큐가 이미 돈다. 데모엔 없어도 된다 |
+
+**이유**: 포폴에 들어가는 건 돌아가는 데모지 스키마가 아니다. 그리고 미룬 넷은
+전부 "필요해지는 자리"가 뒤에 있다 — `04-book-reading-plan.md` 의 저스트-인-타임과 같은 근거.
+**`004` 는 안 버려진다** — M5 에서 에이전트가 뱉은 걸 저장할 때 그대로 쓴다.
+
+⚠️ **그래서 `03-build-plan.md` 의 M2 완료 판정(RBAC 포함)은 아직 통과하지 못했다.**
+M2 는 "완료"가 아니라 "004 까지"다. M1 테스트와 같은 종류의 미룸이다.
+
+**M5 가 하는 것**: M0 의 `backend/agents/base.py`(에이전트 하나)를 **4개 병렬**로 늘린다 —
+security / quality / testing / docs. 그림의 ④ 배선.
+M3·M4 를 건너뛰어도 되는 이유: 로그가 없어도 돌고, M1 의 큐가 이미 있다.
+
+**진행 현황** (2026-08-19):
+
+| | 만들 것 | 상태 |
+|---|---|---|
+| 1 | `backend/orchestration/engine.py` — 추상 계약 | 🔶 **스캐폴드만. `TODO(human)` 미완** ← 다음 한 걸음 |
+| 2 | state 정의 + 리듀서 (`Annotated[list, operator.add]`) | ⬜ |
+| 3 | `langgraph_engine.py` — 팬아웃/팬인 배선 | ⬜ |
+| 4 | 더미 노드 4개 (sleep + 가짜 Finding) | ⬜ |
+| 5 | 모든 노드에 타임아웃 [01:05:02] | ⬜ |
+| 6 | 체크포인터 — **결정 필요** | ⬜ |
+| 7 | `scripts/demo_m5.py` | ⬜ |
+
+**1번에서 나온 결론** (시그니처 논의, 아직 코드에 안 들어감):
+- 세 메서드가 **같은 식별자 하나**를 인자로 받는다. LangGraph 의 `thread_id` 이고
+  **호출자가 준다** (1차 출처: "Pass a `thread_id` in graph config").
+- ⚠️ **그 식별자를 `run()` 의 반환값으로 하면 안 된다.** 반환값은 함수가 끝나야 생기는데,
+  대비하려는 상황이 정확히 "안 끝나는 것"이다. `kill -9` 되면 그 값이 존재한 적이 없다.
+  → 이름은 **PR 정보(repo·pr_id·head_sha)로 계산**한다. 저장이 아니라 계산이라 몇 번이든 다시 얻는다.
+  004 의 `reviews_unique_head` 와 같은 재료 — 저긴 중복 방지, 여긴 재개용 열쇠.
+- ⚠️ **엔진은 DB 를 모른다.** M5 에 DB 가 안 들어오므로 식별자도 DB 와 무관하다.
+
+**6번 결정**: 인메모리 체크포인터는 완료 판정 ②(`kill -9` 재개)를 **통과 못 한다.**
+후보는 Sqlite(파일 하나) / Postgres(이미 떠 있음). 그 단계에서 정한다.
 
 ### 1. M0 독립 검증 — **새 세션에서**
 
@@ -187,7 +242,7 @@ INV-2가 여기 걸려 있으므로 실제 웹훅을 등록하고 재배달을 �
 |---|---|---|---|
 | **G9** | `agent_events`에 증거 스니펫 원문을 넣을지 / 마스킹할지 / 해시+포인터만 남길지. 보존·압축 정책 | **M2 브리핑 직전** | ∞ (INV-4가 삭제 하드 거부) |
 | **G8** | `code_chunks`에 `repo_id`·`commit_sha` 박기. `past_reviews`·`conventions`를 남길지 뺄지 | **M2 브리핑 직전** | 재인덱싱 = 돈 |
-| **G6** | 애그리게이터 계약 — LLM인가 코드인가 / dedup 키 / severity 충돌 시 뭐가 남나 | **M5 브리핑 직전** (M5 state의 findings 모양이 여기 걸림) | 0 (문서 한 문단) |
+| **G6** | 애그리게이터 계약 — LLM인가 코드인가 / dedup 키 / severity 충돌 시 뭐가 남나 | ~~M5 브리핑 직전~~ → **M6 브리핑 직전** (2026-08-18 이동). M5 는 더미 Finding 이라 합칠 중복이 없다. 스캐폴드는 [ADR 0005](adr/0005-aggregator-contract.md) 에 이미 있음 | 0 (문서 한 문단) |
 | ↳ | **M0에서 실측 근거가 나옴** — 같은 `(file, line, category)`에 `severity`만 다른 중복이 **에이전트 하나의 한 번 호출**에서 생성됨. dedup 키에 `category`가 필요하고, severity 충돌 시 **더 심각한 쪽을 남겨야** 한다(`critical`을 버리면 사람에게 갈 것이 자동 게시됨). 상세는 `PLAN.md` G-M0-3 | | |
 | **G5** | 트러스트 바운더리를 diff + **검색 결과**로 확장 | **M7 브리핑 직전** | 0 (ADR 한 줄) |
 

@@ -66,6 +66,25 @@
   Use for: INV-4의 문 ④. `drop_chunks()`가 DDL이라 DML 트리거의 사정거리 밖인 근거 → RBAC이 별도로 필요한 이유.
   ⚠️ 보존 정책을 켜면 INV-4와 정면 충돌한다는 것도 여기서 나온다.
 
+- [Python 표준 라이브러리 — `asyncio`: Coroutines and Tasks](https://docs.python.org/3/library/asyncio-task.html)
+  `gather()` 의 두 모드가 여기서 확정된다 — 기본값은 첫 예외를 즉시 위로 던지지만
+  **"Other awaitables ... won't be cancelled and will continue to run."**
+  `return_exceptions=True` 는 예외를 결과 리스트의 값으로 만든다.
+  `TaskGroup` 은 반대로 **나머지를 취소**한다("the remaining tasks in the group are cancelled").
+  `asyncio.timeout()` 은 `CancelledError` 를 `TimeoutError` 로 **번역**한다.
+  Use for: M5 팬아웃/팬인의 실패 정책 선택. 고아 태스크가 토큰을 계속 태우는 이유.
+  [Lesson 06](lessons/0006-nobody-looked.html)
+
+- [LangChain Docs — Use the graph API](https://docs.langchain.com/oss/python/langgraph/use-graph-api)
+  **"the entire superstep is transactional. If any of these branches raises an exception,
+  none of the updates are applied to the state."** — M5 설계를 바꾸는 문장이다.
+  예외를 노드 밖으로 내보내면 성공한 브랜치의 결과까지 날아간다 → 노드 안에서 값으로 바꿔야 한다.
+  리듀서(`Annotated[list, operator.add]`)와 노드별 retry policy 도 여기.
+  ⚠️ 체크포인터가 있으면 **"results from successful nodes within a superstep are saved,
+  and don't repeat when resumed"** — 재개 시 중복 호출을 막는 근거.
+  Use for: M5 `langgraph_engine.py`. G6(애그리게이터 계약)의 입력 모양.
+  [Lesson 06](lessons/0006-nobody-looked.html)
+
 ## Wisdom (Communities)
 
 - [r/LocalLLaMA](https://reddit.com/r/LocalLLaMA) · [r/LLMDevs](https://reddit.com/r/LLMDevs)
@@ -90,5 +109,11 @@
   Tiger 문서에서 확인된 건 **"Inheritance is not supported for hypertables"**까지다.
   어차피 트리거로 가므로 실무 영향은 없지만 근거 등급은 구분해 둔다.
   [Lesson 05](lessons/0005-four-doors-to-delete.html)
+
+- **`kill -9` 후 체크포인트 재개의 구체적 메커니즘** — LangGraph 공식 문서는 "fault tolerance" 를
+  용도로 나열하고 superstep 내 성공 노드가 재개 시 반복되지 않는다는 문장까지는 준다.
+  그런데 **프로세스가 중간에 죽었을 때 어디서부터 이어지는지**를 명시한 문장은 못 찾았다.
+  M5 완료 판정 ②가 정확히 이걸 요구하므로 **실측으로 확인한다** — 문서가 아니라 관측이 근거가 된다.
+  [Lesson 06](lessons/0006-nobody-looked.html)
 
 - **confidence 캘리브레이션** — LLM이 뱉는 확신도가 실제 정확도와 맞는지 재는 방법. M11이 범위 밖이라 지금은 공백으로 둔다.
