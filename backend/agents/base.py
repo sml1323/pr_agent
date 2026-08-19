@@ -18,9 +18,14 @@ load_dotenv()
 # M6에서 backend/config/model_router.py 로 뺀다 — 에이전트마다 다른 모델을 쓰려고.
 # 문서는 싼 모델, 보안은 제일 센 모델 [01:48:58]. M0에선 상수 하나로 충분하다.
 #
-# nano 를 고른 건 비용 때문이다. M6에서 에이전트 4개 × PR마다 호출이 되면
-# 이 선택이 4배로 곱해지므로, 지금 싼 모델로 품질 하한을 재두는 게 그 결정의 재료가 된다.
-MODEL = "gpt-5.4-nano"
+# 원래는 nano 였고 근거는 비용이었다 — 에이전트 4개 × PR마다 호출이면 4배로 곱해지니까.
+# 2026-08-14에 로컬 OAuth 프록시로 갈아타면서 그 전제가 죽었다. 호출당 과금이 없고,
+# 애초에 nano 가 프록시 모델 목록에 없다 (sol / terra / luna / 5.5 / 5.4 / 5.4-mini).
+#
+# 새 예산은 비용이 아니라 한도와 지연이다. 실측: 이 diff 한 건에 output 475 토큰 중
+# reasoning 이 291 (61%). 프록시는 무상태라 히스토리도 매번 다시 올라간다.
+# M6에서 4개로 갈릴 때 무엇을 한 번만 계산해 나눠 쓸지가 여기서 결정된다.
+MODEL = "gpt-5.6-luna"
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -115,29 +120,45 @@ def build_user_message(diff_text: str) -> str:
     return built_message
 
 
+def _refusal_text(response: object) -> str:
+    """거부 응답에서 사람이 읽을 이유를 꺼낸다. 못 찾으면 상태값이라도 돌려준다."""
+    for item in getattr(response, "output", []):
+        for content in getattr(item, "content", []) or []:
+            if getattr(content, "type", None) == "refusal":
+                return getattr(content, "refusal", "")
+    return f"이유 없음 (status={getattr(response, 'status', '?')})"
+
+
 def review_diff(diff_text: str) -> tuple[ReviewResult, object]:
     """diff 하나 → 구조화된 리뷰. (결과, 토큰 사용량) 을 돌려준다.
 
     usage 를 같이 돌려주는 이유: PLAN.md 의 '토큰 예산' 칸을 채워야 하고,
     M3에서 record_event(cost, latency, tokens) 를 붙일 때 여기가 그 자리가 된다.
+    ⚠️ Responses API 라 필드명이 input_tokens / output_tokens 다
+       (Chat Completions 의 prompt_tokens / completion_tokens 가 아니다).
     """
-    client = OpenAI()  # OPENAI_API_KEY 를 환경변수에서 읽는다
+    # base_url 은 OPENAI_BASE_URL 환경변수에서 SDK 가 알아서 읽는다.
+    # 로컬 OAuth 프록시를 쓰는 동안엔 .env 가 거기를 가리키고, 진짜 API 로
+    # 되돌리려면 .env 의 그 줄만 지우면 된다. 코드는 어느 쪽인지 몰라도 된다.
+    client = OpenAI()
 
-    completion = client.chat.completions.parse(
+    # Chat Completions 가 아니라 Responses 를 쓰는 이유는 취향이 아니다.
+    # 로컬 프록시의 /v1/chat/completions 는 response_format 을 조용히 무시하고
+    # 자유 텍스트를 돌려준다 — 에러가 아니라 무시라서 더 위험하다.
+    # /v1/responses 만 스키마를 실제로 강제한다. 실측 근거는 docs/CURRENT.md.
+    response = client.responses.parse(
         model=MODEL,
-        messages=[
+        input=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": build_user_message(diff_text)},
         ],
-        response_format=ReviewResult,
+        text_format=ReviewResult,
     )
 
-    message = completion.choices[0].message
-
-    # 모델이 거부하면 parsed 가 None 이고 refusal 에 이유가 들어온다.
+    # 모델이 거부하면 output_parsed 가 None 이다.
     # 여기서 빈 결과를 조용히 돌려주면 "문제가 없어서 비었다"와 구별이 안 된다.
     # 조용히 틀리는 게 시끄럽게 틀리는 것보다 나쁘다 — 터뜨린다.
-    if message.parsed is None:
-        raise RuntimeError(f"모델이 응답을 거부했다: {message.refusal}")
+    if response.output_parsed is None:
+        raise RuntimeError(f"모델이 응답을 거부했다: {_refusal_text(response)}")
 
-    return message.parsed, completion.usage
+    return response.output_parsed, response.usage

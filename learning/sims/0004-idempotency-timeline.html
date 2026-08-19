@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sim 04 — 멱등성 타임라인</title>
+<style>
+  :root{--bg:#0f1620;--panel:#172231;--panel2:#1e2c3f;--rule:#2c3e55;--fg:#e8eef6;
+    --muted:#93a4bb;--ok:#3ecf8e;--bad:#ff6b6b;--warn:#ffb454;--accent:#5aa9ff;--ghost:#7c6bb0}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard",sans-serif}
+  #app{display:flex;height:100vh}
+  .col{display:flex;flex-direction:column;min-width:0;overflow-y:auto}
+  #left{width:272px;flex:none;background:var(--panel);border-right:1px solid var(--rule)}
+  #mid{flex:1.4;border-right:1px solid var(--rule)}
+  #right{flex:1;background:var(--panel)}
+
+  h1{font-size:.95rem;margin:0;padding:14px 15px 3px}
+  .sub{font-size:.7rem;color:var(--muted);padding:0 15px 11px;line-height:1.55}
+  .sec{border-top:1px solid var(--rule);padding:11px 15px}
+  .sec h2{font-size:.66rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);
+    margin:0 0 8px;font-weight:600}
+  .pane{padding:13px 16px}
+  .pane h3{font-size:.72rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);
+    margin:0 0 7px;font-weight:600}
+  .pane .note{font-size:.7rem;color:var(--muted);margin:0 0 9px;line-height:1.55}
+
+  .lv{padding:8px 9px;margin-bottom:4px;border:1px solid var(--rule);border-radius:6px;
+    background:var(--panel2);cursor:pointer;font-size:.73rem;line-height:1.4}
+  .lv:hover{border-color:var(--accent)}
+  .lv.cur{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--panel2))}
+  .lv.done{border-color:var(--ok)}
+  .lv .n{font-family:ui-monospace,Menlo,monospace;font-size:.66rem;color:var(--muted)}
+  .lv.done .n{color:var(--ok)}
+  .lv .g{display:block;color:var(--muted);font-size:.65rem;margin-top:3px}
+
+  .opt{display:flex;gap:6px;margin-bottom:7px}
+  .opt button{flex:1;padding:8px 5px;font-size:.71rem;border-radius:6px;cursor:pointer;
+    border:1px solid var(--rule);background:var(--panel2);color:var(--fg);font-family:inherit;line-height:1.35}
+  .opt button.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 17%,var(--panel2))}
+  .opt button small{display:block;color:var(--muted);font-size:.61rem;margin-top:2px}
+
+  .sl{margin-bottom:11px}
+  .sl label{display:flex;justify-content:space-between;font-size:.7rem;color:var(--muted);margin-bottom:5px}
+  .sl label b{color:var(--warn);font-family:ui-monospace,Menlo,monospace}
+  input[type=range]{width:100%;accent-color:var(--accent)}
+
+  .btn{width:100%;padding:8px;font-size:.73rem;border-radius:6px;cursor:pointer;
+    border:1px solid var(--rule);background:var(--panel2);color:var(--fg);font-family:inherit}
+  .btn:hover{border-color:var(--accent)}
+  .btn.warn{border-color:var(--warn);color:var(--warn)}
+
+  .mission{background:var(--panel2);border:1px solid var(--rule);border-radius:7px;
+    padding:11px 13px;margin-bottom:13px;font-size:.79rem;line-height:1.6}
+  .mission b{color:var(--warn)}
+  .mission .goal{color:var(--accent);font-weight:600}
+
+  /* 타임라인 */
+  .tl{background:#111a26;border:1px solid var(--rule);border-radius:7px;padding:14px 14px 8px;margin-bottom:12px}
+  .tlrow{display:flex;align-items:center;margin-bottom:9px;height:30px}
+  .tlrow .lbl{width:78px;flex:none;font-size:.7rem;color:var(--muted);font-family:ui-monospace,Menlo,monospace}
+  .track{flex:1;position:relative;height:26px;background:var(--panel2);border-radius:5px;overflow:hidden}
+  .seg{position:absolute;top:3px;height:20px;border-radius:4px;font-size:.6rem;
+    display:grid;place-items:center;font-family:ui-monospace,Menlo,monospace;color:#06131f;font-weight:600;
+    white-space:nowrap;overflow:hidden}
+  .seg.check{background:var(--accent)}
+  .seg.proc{background:var(--ghost);color:#fff}
+  .seg.rec{background:var(--ok)}
+  .seg.atomic{background:linear-gradient(90deg,var(--accent),var(--ok))}
+  .seg.skip{background:#3a4a5e;color:var(--muted)}
+  .gap{position:absolute;top:0;height:26px;background:repeating-linear-gradient(45deg,
+    color-mix(in srgb,var(--bad) 22%,transparent),color-mix(in srgb,var(--bad) 22%,transparent) 5px,
+    transparent 5px,transparent 10px);border-left:1px dashed var(--bad);border-right:1px dashed var(--bad)}
+  .axis{display:flex;justify-content:space-between;font-size:.62rem;color:var(--muted);
+    font-family:ui-monospace,Menlo,monospace;padding-left:78px;margin-top:2px}
+  .legend{display:flex;gap:11px;font-size:.63rem;color:var(--muted);margin-top:9px;padding-left:78px;flex-wrap:wrap}
+  .legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+
+  .code{background:#111a26;border:1px solid var(--rule);border-radius:6px;padding:10px 12px;
+    font-family:ui-monospace,Menlo,monospace;font-size:.71rem;line-height:1.65;white-space:pre;
+    overflow-x:auto;margin:0 0 11px}
+  .code .c{color:var(--muted)} .code .k{color:var(--accent)} .code .w{color:var(--bad)}
+
+  .state{display:flex;gap:9px;margin-bottom:12px}
+  .state div{flex:1;background:var(--panel2);border:1px solid var(--rule);border-radius:6px;
+    padding:8px 10px;font-size:.67rem;color:var(--muted);font-family:ui-monospace,Menlo,monospace}
+  .state b{display:block;font-size:1.15rem;margin-top:3px;color:var(--fg)}
+  .state .bad b{color:var(--bad)} .state .ok b{color:var(--ok)}
+
+  .run{width:100%;padding:11px;border-radius:7px;border:1px solid var(--ok);background:transparent;
+    color:var(--ok);font-family:inherit;font-size:.86rem;font-weight:600;cursor:pointer;margin-bottom:12px}
+  .run:hover{background:color-mix(in srgb,var(--ok) 14%,transparent)}
+
+  .out{border:1px solid var(--rule);border-radius:7px;padding:12px 13px;background:var(--panel2)}
+  .out .v{font-size:.88rem;font-weight:700;margin-bottom:8px}
+  .out .v.ok{color:var(--ok)} .out .v.bad{color:var(--bad)} .out .v.warn{color:var(--warn)}
+  .out .ex{font-size:.75rem;line-height:1.65}
+  .out .ex em{color:var(--warn);font-style:normal}
+  .out .ex code{font-family:ui-monospace,Menlo,monospace;font-size:.7rem;color:var(--accent)}
+  .verdict{margin-top:10px;padding:8px 11px;border-radius:6px;font-size:.76rem;font-weight:600}
+  .verdict.win{background:color-mix(in srgb,var(--ok) 16%,transparent);border:1px solid var(--ok);color:var(--ok)}
+  .verdict.lose{background:color-mix(in srgb,var(--bad) 14%,transparent);border:1px solid var(--bad);color:var(--bad)}
+
+  .hintbtn{background:none;border:none;color:var(--accent);font-family:inherit;font-size:.7rem;
+    cursor:pointer;padding:0;border-bottom:1px solid color-mix(in srgb,var(--accent) 40%,transparent)}
+  .hinttext{font-size:.71rem;color:var(--muted);line-height:1.6;margin-top:7px;display:none}
+  .hinttext.show{display:block}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="col" id="left">
+    <h1>멱등성 타임라인</h1>
+    <p class="sub">같은 배달이 두 번 왔을 때<br>
+      <b>언제 겹치느냐</b>에 따라 결과가 달라진다.</p>
+
+    <div class="sec">
+      <h2>미션</h2>
+      <div id="levels"></div>
+    </div>
+
+    <div class="sec">
+      <h2>dedup 구현</h2>
+      <div class="opt">
+        <button data-impl="naive" id="implNaive">확인 → 처리 → 기록<small>세 단계가 떨어져 있다</small></button>
+        <button data-impl="atomic" id="implAtomic">넣으면서 확인<small>확인과 기록이 한 동작</small></button>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>타이밍</h2>
+      <div class="sl">
+        <label>두 번째 배달이 늦게 오는 정도 <b id="dLbl">0 ms</b></label>
+        <input type="range" id="delay" min="0" max="600" step="10" value="0">
+      </div>
+      <div class="sl" id="respWrap" style="display:none">
+        <label>인그레스 응답 시간 <b id="rLbl">30 ms</b></label>
+        <input type="range" id="resp" min="30" max="14000" step="10" value="30">
+      </div>
+      <button class="btn warn" id="restart">프로세스 재시작 (기억 비우기)</button>
+    </div>
+  </div>
+
+  <div class="col" id="mid">
+    <div class="pane">
+      <div class="mission" id="mission"></div>
+
+      <h3>지금 도는 코드</h3>
+      <div class="code" id="code"></div>
+
+      <h3>타임라인</h3>
+      <p class="note">두 배달이 같은 <code>X-GitHub-Delivery</code> 를 갖고 온다.
+        슬라이더로 두 번째가 오는 시각을 밀어 보자.</p>
+      <div class="tl">
+        <div class="tlrow"><div class="lbl">배달 A</div><div class="track" id="trackA"></div></div>
+        <div class="tlrow"><div class="lbl">배달 B</div><div class="track" id="trackB"></div></div>
+        <div class="axis"><span>0 ms</span><span id="axMid">300</span><span id="axEnd">600 ms</span></div>
+        <div class="legend">
+          <span><i style="background:var(--accent)"></i>확인</span>
+          <span><i style="background:var(--ghost)"></i>처리</span>
+          <span><i style="background:var(--ok)"></i>기록</span>
+          <span><i style="background:repeating-linear-gradient(45deg,#ff6b6b,#ff6b6b 3px,transparent 3px,transparent 6px)"></i>둘 다 통과하는 틈</span>
+        </div>
+      </div>
+
+      <div class="state">
+        <div id="stDepth">큐 깊이<b>0</b></div>
+        <div id="stSeen">기억된 delivery<b>0</b></div>
+        <div id="stLost">유실<b>0</b></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col" id="right">
+    <div class="pane">
+      <h3>실행</h3>
+      <p class="note">누르기 전에 정해라 — <b>큐 깊이가 1 일까, 2 일까?</b></p>
+      <button class="run" id="run">배달 두 번 쏘기 ▶</button>
+      <div class="out" id="out">
+        <div class="v" style="color:var(--muted)">아직 실행 안 함</div>
+        <div class="ex" style="color:var(--muted)">왼쪽에서 미션을 고르고 실행한다.</div>
+      </div>
+      <div style="margin-top:11px">
+        <button class="hintbtn" id="hintBtn">힌트 보기</button>
+        <div class="hinttext" id="hintText"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+"use strict";
+
+// ═══════════════════════════════════════════════════════════
+// 1. 단계 타이밍 (ms) — 판정은 전부 이 숫자로부터 계산된다
+// ═══════════════════════════════════════════════════════════
+
+var T = {
+  checkStart: 0,   checkEnd: 40,     // "이미 본 배달인가?" 조회
+  procStart: 40,   procEnd: 340,     // 큐에 넣고 부수 작업
+  recStart: 340,   recEnd: 380,      // "봤다" 고 기록
+  atomicEnd: 40                      // 확인+기록이 한 동작이면 여기서 끝
+};
+var SPAN = 700;   // 타임라인 전체 폭이 나타내는 시간
+
+var LEVELS = [
+  { n:1, name:"순차 재배달",
+    impl:"naive", delay:600, goal:{depth:1},
+    desc:"사람이 GitHub UI 에서 <b>재배달</b>을 눌렀다. 첫 요청이 끝난 뒤에 온다.",
+    goalText:"큐 깊이를 <b>1</b> 로 유지하라",
+    hint:"두 번째가 충분히 늦게 오면 첫 요청이 이미 기록을 마친 뒤다. 슬라이더를 오른쪽 끝으로." },
+
+  { n:2, name:"거의 동시에",
+    impl:"naive", delay:0, goal:{depth:2},
+    desc:"두 배달이 <b>거의 동시에</b> 도착했다. 구현은 확인 → 처리 → 기록 세 단계다.",
+    goalText:"큐 깊이가 <b>2</b> 가 되게 만들어라 — 그리고 왜인지 볼 것",
+    hint:"확인(①)과 기록(③) 사이가 벌어져 있다. B 가 그 틈에 확인을 끝내면 “아직 못 본 배달” 로 보인다. 슬라이더를 왼쪽으로." },
+
+  { n:3, name:"틈을 없앤다",
+    impl:"atomic", delay:0, goal:{depth:1},
+    desc:"확인과 기록을 <b>한 동작</b>으로 합쳤다. <code>set.add</code> 전후의 <code>len()</code> 을 비교한다.",
+    goalText:"같은 타이밍에서 큐 깊이를 <b>1</b> 로 만들어라",
+    hint:"구현을 “넣으면서 확인” 으로 바꾸면 틈이 사라진다. 슬라이더를 어디에 둬도 1 이어야 한다." },
+
+  { n:4, name:"기억은 재시작을 못 넘는다",
+    impl:"atomic", delay:600, goal:{depth:2}, needRestart:true,
+    desc:"완벽해 보이는 구현. 그런데 서버를 <b>껐다 켠 뒤</b> 재배달이 온다.",
+    goalText:"재시작 버튼을 누르고 큐 깊이 <b>2</b> 를 만들어라",
+    hint:"<code>_seen_deliveries</code> 는 프로세스 메모리다. 재시작하면 통째로 사라진다. 이게 M4 에서 Redis 가 필요한 이유다 — 버그가 아니라 알고 미룬 타협." },
+
+  { n:5, name:"10초의 벽",
+    impl:"atomic", delay:600, goal:{lost:1}, useResp:true,
+    desc:"GitHub 은 실패한 배달을 <b>자동 재시도하지 않는다.</b> 응답이 <b>10초</b>를 넘으면 실패로 본다.",
+    goalText:"응답 시간을 늘려 이벤트를 <b>영구 유실</b>시켜라",
+    hint:"인그레스에서 리뷰까지 다 해버리면 응답이 10초를 넘는다. 그러면 그 이벤트는 <b>다시 오지 않는다.</b> 큐가 있는 이유가 “느려도 되게” 가 아니라 <b>“유실을 막으려고”</b> 인 게 이것이다." }
+];
+
+var state = { lv:0, impl:"naive", delay:0, resp:30, restarted:false, done:{} };
+
+// ═══════════════════════════════════════════════════════════
+// 2. 판정 — 겹침 계산
+// ═══════════════════════════════════════════════════════════
+
+function simulate() {
+  var d = state.delay;
+  var seenEmpty = state.restarted;   // 재시작하면 기억이 비어 있다
+
+  // A 는 항상 통과한다 (첫 배달이거나, 기억이 비었거나)
+  var a = { pass:true };
+
+  // B 가 "이미 본 배달" 로 보이려면, B 의 확인 시점에 A 의 기록이 끝나 있어야 한다.
+  var recordedAt = state.impl === "atomic" ? T.atomicEnd : T.recEnd;
+  var bChecksAt = d + T.checkEnd;
+  var bPass = seenEmpty ? true : (bChecksAt < recordedAt);
+
+  var depth = 1 + (bPass ? 1 : 0);
+
+  // 응답이 10초를 넘으면 GitHub 이 실패로 기록하고 재시도하지 않는다 → 영구 유실
+  var timedOut = state.resp > 10000;
+  var lost = timedOut ? depth : 0;
+  if (timedOut) depth = 0;
+
+  return {
+    depth: depth, lost: lost, bPass: bPass, timedOut: timedOut,
+    recordedAt: recordedAt, bChecksAt: bChecksAt,
+    gapStart: T.checkEnd, gapEnd: recordedAt
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
+// 3. 렌더링
+// ═══════════════════════════════════════════════════════════
+
+var $ = function(id){ return document.getElementById(id); };
+var pct = function(ms){ return (ms / SPAN * 100) + "%"; };
+
+function seg(cls, from, to, text) {
+  return '<div class="seg ' + cls + '" style="left:' + pct(from) +
+         ';width:' + pct(to - from) + '">' + (text || "") + '</div>';
+}
+
+function renderTimeline() {
+  var s = simulate();
+  var atomic = state.impl === "atomic";
+
+  // A
+  var A = atomic
+    ? seg("atomic", T.checkStart, T.atomicEnd, "확인+기록") + seg("proc", T.procStart, T.procEnd, "처리")
+    : seg("check", T.checkStart, T.checkEnd) + seg("proc", T.procStart, T.procEnd, "처리") +
+      seg("rec", T.recStart, T.recEnd);
+  // A 의 틈 — 확인이 끝난 뒤 기록이 끝날 때까지
+  var gap = !atomic
+    ? '<div class="gap" style="left:' + pct(s.gapStart) + ';width:' + pct(s.gapEnd - s.gapStart) + '"></div>'
+    : "";
+  $("trackA").innerHTML = gap + A;
+
+  // B
+  var d = state.delay;
+  var B;
+  if (s.bPass) {
+    B = atomic
+      ? seg("atomic", d + T.checkStart, d + T.atomicEnd, "확인+기록") + seg("proc", d + T.procStart, d + T.procEnd, "처리")
+      : seg("check", d + T.checkStart, d + T.checkEnd) + seg("proc", d + T.procStart, d + T.procEnd, "처리") +
+        seg("rec", d + T.recStart, d + T.recEnd);
+  } else {
+    B = seg("check", d + T.checkStart, d + T.checkEnd) +
+        seg("skip", d + T.checkEnd, d + T.checkEnd + 120, "중복 → 버림");
+  }
+  $("trackB").innerHTML = B;
+
+  $("stDepth").innerHTML = "큐 깊이<b>" + s.depth + "</b>";
+  $("stDepth").className = s.depth > 1 ? "bad" : "ok";
+  $("stSeen").innerHTML = "기억된 delivery<b>" + (state.restarted ? 0 : 1) + "</b>";
+  $("stLost").innerHTML = "유실<b>" + s.lost + "</b>";
+  $("stLost").className = s.lost ? "bad" : "";
+
+  $("code").innerHTML = atomic
+    ? '<span class="c"># 확인과 기록이 한 동작 — 사이에 틈이 없다</span>\n'
+    + 'before = <span class="k">len</span>(_seen_deliveries)\n'
+    + '_seen_deliveries.<span class="k">add</span>(delivery_id)\n'
+    + '<span class="k">if</span> <span class="k">len</span>(_seen_deliveries) == before:\n'
+    + '    <span class="k">return</span>  <span class="c"># 이미 있던 값 → 중복</span>\n'
+    + 'enqueue(payload)'
+    : '<span class="c"># 세 단계가 떨어져 있다</span>\n'
+    + '<span class="k">if</span> delivery_id <span class="k">in</span> _seen:   <span class="w"># ① 확인</span>\n'
+    + '    <span class="k">return</span>\n'
+    + 'enqueue(payload)             <span class="w"># ② 처리</span>\n'
+    + '_seen.<span class="k">add</span>(delivery_id)        <span class="w"># ③ 기록</span>';
+
+  $("implNaive").classList.toggle("on", !atomic);
+  $("implAtomic").classList.toggle("on", atomic);
+  $("dLbl").textContent = state.delay + " ms";
+  $("rLbl").textContent = state.resp >= 1000
+    ? (state.resp/1000).toFixed(1) + " s" : state.resp + " ms";
+  $("restart").textContent = state.restarted
+    ? "재시작됨 — 기억이 비었다 (되돌리려면 클릭)" : "프로세스 재시작 (기억 비우기)";
+  $("restart").style.borderColor = state.restarted ? "var(--bad)" : "var(--rule)";
+  $("restart").style.color = state.restarted ? "var(--bad)" : "var(--fg)";
+
+  var L = LEVELS[state.lv];
+  $("respWrap").style.display = L.useResp ? "block" : "none";
+  $("axMid").textContent = Math.round(SPAN/2);
+  $("axEnd").textContent = SPAN + " ms";
+}
+
+function renderLevels() {
+  var el = $("levels"); el.innerHTML = "";
+  LEVELS.forEach(function (L, i) {
+    var d = document.createElement("div");
+    d.className = "lv" + (i === state.lv ? " cur" : "") + (state.done[L.n] ? " done" : "");
+    d.innerHTML = '<span class="n">' + (state.done[L.n] ? "✓" : "L" + L.n) + '</span> ' + L.name +
+                  '<span class="g">' + L.goalText.replace(/<[^>]+>/g,"") + '</span>';
+    d.addEventListener("click", function(){ loadLevel(i); });
+    el.appendChild(d);
+  });
+}
+
+function loadLevel(i) {
+  var L = LEVELS[i];
+  state.lv = i;
+  state.impl = L.impl;
+  state.delay = L.delay;
+  state.resp = 30;
+  state.restarted = false;
+  $("delay").value = L.delay;
+  $("resp").value = 30;
+  $("hintText").classList.remove("show");
+  $("mission").innerHTML = "<b>L" + L.n + " · " + L.name + "</b><br>" + L.desc +
+    '<br><br><span class="goal">목표:</span> ' + L.goalText;
+  $("hintText").innerHTML = L.hint;
+  $("out").innerHTML = '<div class="v" style="color:var(--muted)">아직 실행 안 함</div>' +
+    '<div class="ex" style="color:var(--muted)">슬라이더를 만지고 실행한다.</div>';
+  renderLevels(); renderTimeline();
+}
+
+// ── 조작 ──
+$("delay").addEventListener("input", function(){ state.delay = +this.value; renderTimeline(); });
+$("resp").addEventListener("input", function(){ state.resp = +this.value; renderTimeline(); });
+document.querySelectorAll("[data-impl]").forEach(function (b) {
+  b.addEventListener("click", function(){ state.impl = b.dataset.impl; renderTimeline(); });
+});
+$("restart").addEventListener("click", function(){ state.restarted = !state.restarted; renderTimeline(); });
+$("hintBtn").addEventListener("click", function(){ $("hintText").classList.toggle("show"); });
+
+// ── 실행 ──
+$("run").addEventListener("click", function () {
+  var L = LEVELS[state.lv];
+  var s = simulate();
+  var win = true;
+  if (L.goal.depth !== undefined && s.depth !== L.goal.depth) win = false;
+  if (L.goal.lost !== undefined && s.lost !== L.goal.lost) win = false;
+  if (L.needRestart && !state.restarted) win = false;
+  if (win) state.done[L.n] = true;
+
+  var v, cls, ex;
+  if (s.timedOut) {
+    v = "💀 영구 유실 — 이벤트가 사라졌다"; cls = "bad";
+    ex = "응답이 <em>" + (state.resp/1000).toFixed(1) + "초</em>로 10초를 넘었다. "
+       + "GitHub 은 이걸 실패로 기록하고 <em>자동 재시도하지 않는다.</em><br><br>"
+       + "그 PR 이벤트는 <em>다시 오지 않는다.</em> 사람이 UI 에서 수동 재배달을 누르지 않는 한 영영.<br><br>"
+       + "그래서 큐의 존재 이유가 “느려도 되게” 가 아니라 <em>“유실을 막으려고”</em> 다. "
+       + "인그레스는 <code>큐에 넣고 즉시 200</code> 만 하고, 무거운 일은 워커가 한다.";
+  } else if (s.depth > 1) {
+    v = "💥 큐 깊이 2 — 같은 PR 을 두 번 리뷰한다"; cls = "bad";
+    ex = state.restarted
+      ? "<em>재시작으로 기억이 비었다.</em> <code>_seen_deliveries</code> 는 프로세스 메모리라 "
+        + "껐다 켜면 통째로 사라진다.<br><br>구현에 버그가 있는 게 아니다 — "
+        + "<em>알고 미룬 타협</em>이다. M4 에서 Redis 로 옮기면 재시작을 넘어 살아남는다."
+      : "B 가 <em>" + s.bChecksAt + "ms</em> 에 확인을 끝냈는데, A 의 기록은 <em>"
+        + s.recordedAt + "ms</em> 에야 끝난다. 그 사이 B 에게는 “처음 보는 배달” 이다.<br><br>"
+        + "빗금 친 구간이 그 <em>틈</em>이다. 확인(①)과 기록(③)이 떨어져 있는 한 "
+        + "이 틈은 항상 존재한다 — 좁힐 수는 있어도 없앨 수 없다.<br><br>"
+        + "고치는 방향은 <em>확인과 기록을 하나의 동작으로</em> 만드는 것이다.";
+  } else {
+    v = "✅ 큐 깊이 1 — 한 번만 처리했다"; cls = "ok";
+    ex = state.impl === "atomic"
+      ? "확인과 기록이 <em>한 동작</em>이라 틈이 없다. B 가 언제 오든 결과가 같다.<br><br>"
+        + "<code>set.add()</code> 는 반환값이 없지만, <em>넣기 전후의 <code>len()</code></em> 을 "
+        + "비교하면 “새 값이었나” 를 알 수 있다. 그게 우리 <code>is_duplicate()</code> 다."
+      : "B 가 <em>" + s.bChecksAt + "ms</em> 에 확인할 때 A 의 기록(<em>" + s.recordedAt
+        + "ms</em>)이 이미 끝나 있었다.<br><br>"
+        + "다만 이건 <em>운이 좋았을 뿐</em>이다 — 타이밍이 바뀌면 깨진다. "
+        + "슬라이더를 왼쪽으로 밀어 보면 바로 드러난다.";
+  }
+
+  $("out").innerHTML = '<div class="v ' + cls + '">' + v + '</div>' +
+    '<div class="ex">' + ex + '</div>' +
+    (win ? '<div class="verdict win">✔ L' + L.n + ' 클리어</div>'
+         : '<div class="verdict lose">✘ 목표와 다른 결과다 — 힌트를 보자</div>');
+  renderLevels();
+});
+
+loadLevel(0);
+})();
+</script>
+</body>
+</html>

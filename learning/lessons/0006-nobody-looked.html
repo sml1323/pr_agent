@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 06 — "아무 문제 없음"과 "아무도 안 봄"</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Lesson 06 · M5 · backend/orchestration/</p>
+<h1>"아무 문제 없음"과<br>"아무도 안 봄"</h1>
+<p class="subtitle">병렬로 갈라놓는 순간, 빈 결과는 두 가지 뜻을 갖는다. 둘을 못 가르면 시스템이 조용히 거짓말한다.</p>
+
+<p class="callout">
+<span class="label">여기서 땅이 또 바뀐다</span>
+<a href="0001-schema-not-prompt.html">01</a>~<a href="0005-four-doors-to-delete.html">05</a>는 전부
+<strong>혼자 도는 코드</strong>였다. 하나가 터지면 그 자리에서 터졌고, 터진 걸 바로 알았다.<br><br>
+M5부터는 <strong>넷이 동시에 돈다.</strong> 그러면 새로운 실패 방식이 생긴다 —
+<strong>터졌는데 아무도 모르는 것.</strong> 이 레슨은 그거 하나만 다룬다.
+</p>
+
+<h2>장면부터</h2>
+
+<p>
+건강검진을 받았다. 피검사·엑스레이·심전도·초음파를 <strong>동시에</strong> 돌린다. 각각 다른 기사가 본다.
+30분 뒤 결과지가 나온다.
+</p>
+
+<p class="callout">
+<strong>이상 소견 없음.</strong>
+</p>
+
+<p>
+그런데 엑스레이 기계가 고장나 있었다. 촬영이 아예 안 됐다.
+결과지에 <strong>엑스레이 항목이 그냥 없다.</strong> 소견이 비어 있으니 "이상 없음"에 합산됐다.
+</p>
+
+<p>
+우리 파이프라인의 ④→⑤가 정확히 이 모양이다.
+</p>
+
+<pre><code>       ┌─ security ─┐   findings: []      <span class="c-bad">← 죽어서 빈 것</span>
+       │             │
+PR ────┼─ quality ──┼──→ <span class="c-good">애그리게이터</span> ──→ 게이트 ──→ 자동 게시
+       │             │      "critical 없네"
+       ├─ testing ──┤
+       └─ docs ─────┘</code></pre>
+
+<p class="callout">
+<span class="label">용어 — 뒤 절 전체에서 계속 나온다</span>
+<strong>애그리게이터(aggregator)</strong>는 <strong>모으는 담당</strong>이다. 넷이 각자 낸 지적을
+한 뭉치로 <strong>정리</strong>한다 — 이어붙이고, 중복을 빼고, 대표 숫자 하나(전체 확신도)를 뽑는다.<br><br>
+<strong>게이트와 하는 일의 종류가 다르다.</strong> 애그리게이터는 <strong>아무것도 결정하지 않는다</strong> —
+자르거나 버리지 않고 모양만 다듬어 넘긴다. 통과·차단은 전부 게이트 몫이다.
+</p>
+
+<div class="table-scroll">
+<table>
+  <tr><th></th><th>하는 일</th><th>예</th></tr>
+  <tr><td>애그리게이터 ⑤</td><td><strong>정리</strong></td><td>"지적 5개 → 중복 빼고 3개. overall 0.95"</td></tr>
+  <tr><td>게이트 ⑥</td><td><strong>판단</strong></td><td>"0.95지만 critical이니 사람에게"</td></tr>
+</table>
+</div>
+
+<p>
+의사 넷이 각자 소견서를 썼고 <strong>간호사가 한 장으로 정리해 담당의에게 올리는</strong> 그림이다.
+간호사는 진단을 안 내린다.
+</p>
+
+<p>
+그래서 위 장면에서 게이트는 <code>critical</code>이 하나도 없는 걸 보고 자동 게시한다.
+<strong>진실은 "보안 관점은 아무도 안 봤다"</strong>였다.
+이 프로젝트의 제1원칙이 <strong>선별</strong>인데, 여기서 나오는 건 선별이 아니라 <strong>근거 없는 통과</strong>다.
+</p>
+
+<div class="keystone">
+빈 리스트는 <strong>"깨끗하다"</strong>와 <strong>"아무도 안 봤다"</strong>를<br>같은 값으로 만든다.
+</div>
+
+<h2>1. 그전에 — 병렬로 갈라도 되는 조건</h2>
+
+<p>
+넷을 동시에 돌리는 게 항상 옳은 건 아니다. 조건이 있다:
+<strong>노드끼리 서로의 출력을 안 쓸 때만</strong> 병렬이 안전하다 [01:59:50].
+</p>
+
+<p>
+우리 넷은 이 조건을 만족한다. <code>security</code>가 찾은 SQL 인젝션이
+<code>docs</code>의 판단을 바꾸지 않는다. 각자 같은 diff를 읽고 각자 답한다.
+</p>
+
+<p class="callout">
+<strong>이걸 안 따지고 병렬화하면 얻는 게 속도가 아니라 충돌이다.</strong><br>
+B가 A의 결과를 필요로 하는데 동시에 돌리면, B는 A가 아직 안 쓴 값을 읽는다.
+그러면 <strong>매번 다른 결과</strong>가 나오고, 재현이 안 되니 디버깅도 안 된다.
+</p>
+
+<h2>2. 갈라놓기는 한 줄이다</h2>
+
+<p>파이썬에서 넷을 동시에 돌리는 건 이게 전부다.</p>
+
+<pre><code>findings = await asyncio.gather(
+    security(diff), quality(diff), testing(diff), docs(diff)
+)</code></pre>
+
+<p>
+어려운 건 여기가 아니다. <strong>합칠 때</strong>다.
+<code>security()</code>가 예외를 던지면 위 줄이 어떻게 되는지가 이 레슨의 절반이다.
+</p>
+
+<h3><code>gather()</code>의 두 얼굴 — 공식 문서 그대로</h3>
+
+<p class="callout">
+"If <em>return_exceptions</em> is <code>False</code> (default), the first raised exception is
+immediately propagated to the task that awaits on <code>gather()</code>.
+<strong>Other awaitables in the aws sequence won't be cancelled and will continue to run.</strong>"<br><br>
+"If <em>return_exceptions</em> is <code>True</code>, exceptions are treated the same as successful results,
+and aggregated in the result list."<br>
+— <a href="https://docs.python.org/3/library/asyncio-task.html">Python 공식 문서, asyncio — Coroutines and Tasks</a>
+</p>
+
+<p>
+굵게 표시한 부분이 함정이다. 기본값에서 하나가 터지면 예외는 즉시 위로 튀는데,
+<strong>나머지 셋은 취소되지 않는다.</strong> 계속 돈다. 결과를 받을 사람이 없는 채로.
+</p>
+
+<p>
+LLM 호출이니까 그 셋은 <strong>토큰을 계속 태운다.</strong> 그리고 아무도 그 결과를 안 읽는다.
+"에러 났으니 다 멈췄겠지"는 <strong>틀린 그림</strong>이다.
+</p>
+
+<div class="table-scroll">
+<table>
+  <tr><th>방식</th><th>하나가 터지면</th><th>나머지는</th></tr>
+  <tr>
+    <td><code>gather()</code> 기본</td>
+    <td>예외가 즉시 위로 튄다</td>
+    <td><strong>안 죽는다.</strong> 계속 돌며 토큰을 쓴다</td>
+  </tr>
+  <tr>
+    <td><code>gather(return_exceptions=True)</code></td>
+    <td>예외가 <em>결과 리스트의 값</em>이 된다</td>
+    <td>끝까지 기다린다. 순서도 유지</td>
+  </tr>
+  <tr>
+    <td><code>TaskGroup</code></td>
+    <td><code>ExceptionGroup</code>으로 묶여 나온다</td>
+    <td><strong>취소된다.</strong> 문서: "the remaining tasks in the group are cancelled"</td>
+  </tr>
+</table>
+</div>
+
+<p>
+셋 다 "옳은" 게 아니라 <strong>서로 다른 실패 정책</strong>이다.
+"하나라도 실패하면 전부 무의미하다"면 <code>TaskGroup</code>이 맞고,
+<strong>"셋이라도 건지고 싶다"면 <code>return_exceptions=True</code></strong>가 맞다.
+우리는 후자다 — 보안 관점이 죽어도 나머지 셋의 지적은 여전히 값이 있다.
+</p>
+
+<div class="quiz" data-answer="2">
+  <p class="quiz-q"><code>asyncio.gather()</code>를 기본값으로 쓰다가 하나가 예외를 던졌다. 나머지 셋은?</p>
+  <ol class="quiz-opts">
+    <li data-fb="문서가 정반대를 명시한다 — won't be cancelled. 취소는 TaskGroup 의 동작이다.">즉시 취소되고 정리된다</li>
+    <li data-fb="문서 그대로다: won't be cancelled and will continue to run. 결과를 받을 사람 없이 토큰을 계속 쓴다.">취소되지 않고 계속 돈다</li>
+    <li data-fb="예외를 묶어서 주는 건 TaskGroup 의 ExceptionGroup 이다. gather 는 첫 예외 하나만 던진다.">예외 하나로 묶여서 온다</li>
+    <li data-fb="살아남는 것과 결과가 쓰이는 것은 다르다. 넷 다 계속 돌지만 아무도 안 읽는다.">마지막 하나만 살아남는다</li>
+  </ol>
+</div>
+
+<h2>3. <code>return_exceptions=True</code>로도 거짓말은 안 없어진다</h2>
+
+<p>여기가 이 레슨의 심장이다. 위 표에서 답을 골랐으니 이제 안전할까?</p>
+
+<p>
+먼저 <code>gather()</code>가 돌려주는 것부터 정확히 보자. 이건 그냥 리스트가 아니라
+<strong>자리가 정해진 4칸짜리 상자</strong>다. 순서가 <strong>입력 순서 그대로</strong>라서
+<strong>칸 번호가 곧 에이전트 이름</strong>이다.
+</p>
+
+<pre><code>results = await asyncio.gather(*agents, return_exceptions=True)
+
+results = [ Exception,   [f1, f2],   [f3],      []    ]
+              <span class="c-bad">↑</span>            ↑          ↑         <span class="c-bad">↑</span>
+           security     quality    testing     docs
+           <span class="c-bad">(죽음)</span>       (2개 찾음)  (1개)    <span class="c-bad">(봤는데 없음)</span></code></pre>
+
+<p>이 상자를 보면 전부 알 수 있다. 그런데 여기서 걸러내면:</p>
+
+<pre><code>findings = []
+for r in results:
+    if isinstance(r, Exception):
+        continue                  <span class="c-bad">← 실패를 여기서 조용히 버린다</span>
+    findings.extend(r)
+
+<span class="c-comment"># findings = [f1, f2, f3]   ← 안 터진다. 잘 도는 것처럼 보인다.</span>
+
+return {"findings": findings}</code></pre>
+
+<p class="callout">
+같은 코드를 한 줄로 쓰면 <code>[f for r in results if not isinstance(r, Exception) for f in r]</code>다.
+압축하면서 <strong>저 <code>continue</code>가 눈에서 사라진다</strong> — 그게 이 절이 위험한 이유의 절반이다.
+</p>
+
+<p>
+프로그램은 안 죽는다. 그런데 <strong>칸이 사라졌다.</strong> 종이 3장만 남는다.
+넷이 봤는지 셋이 봤는지 <strong>그 리스트 안에는 안 적혀 있다.</strong>
+</p>
+
+<p>결정적인 건 상자의 <strong>첫 칸과 마지막 칸</strong>이다.</p>
+
+<div class="table-scroll">
+<table>
+  <tr><th></th><th>실제로 일어난 일</th><th>findings 에 보탠 것</th></tr>
+  <tr><td><code>security</code></td><td>죽어서 <strong>못 봤다</strong></td><td>없음</td></tr>
+  <tr><td><code>docs</code></td><td>다 보고 <strong>문제 없다</strong></td><td>없음</td></tr>
+</table>
+</div>
+
+<p>
+<strong>둘이 기여한 게 똑같이 "없음"이다.</strong> 그래서 필터를 지나고 나면
+이 둘은 <strong>물리적으로 구분 불가능</strong>해진다.
+맨 앞의 "빈 리스트는 두 가지 뜻"이 추상적인 말이 아니라 <strong>바로 이 코드에서 벌어지는 일</strong>이다.
+</p>
+
+<p class="callout">
+<strong>예외를 <em>받는 것</em>과 그 사실을 <em>하류에 전달하는 것</em>은 다른 일이다.</strong><br>
+<code>isinstance(r, Exception)</code>으로 걸러낸 순간, 실패 정보는 그 <code>if</code> 문 안에서 죽는다.
+</p>
+
+<p>
+그래서 팬인(fan-in)에서 넘겨야 할 것은 findings 하나가 아니다.
+<strong>누가 봤는지를 같이 넘겨야 한다</strong> — 이걸 커버리지(coverage)라고 부르자.
+</p>
+
+<pre><code>return {
+    "findings":  findings,
+    "completed": ["quality", "testing", "docs"],
+    "failed":    ["security"],   <span class="c-good">← 이게 없으면 게이트는 판단할 수 없다</span>
+}</code></pre>
+
+<p>
+이제 게이트가 물어볼 수 있다. <em>"critical이 없다"가 <strong>넷이 다 보고 없는 건가,
+셋만 보고 없는 건가?"</strong></em> 앞의 것만 자동 게시로 보낸다.
+</p>
+
+<p class="callout">
+<span class="label">이미 자리가 파여 있다</span>
+<code>migrations/004_truth.sql</code>의 <code>reviews</code> 테이블에
+<code>status</code>(어디쯤 있나)와 <code>failed_agents TEXT[]</code>(누가 죽었나)를
+<strong>따로</strong> 둔 게 정확히 이걸 위해서다.
+<code>partial</code>과 <code>auto_posted</code>가 다른 값인 이유가 이 절 전체다.<br><br>
+스키마를 쓸 때는 "언젠가 필요하겠지"였는데, <strong>지금 그 언젠가가 왔다.</strong>
+</p>
+
+<h2>4. 타임아웃 — 조용한 멈춤을 시끄러운 실패로</h2>
+
+<p>
+지금까지는 <strong>터지는</strong> 실패만 봤다. 더 나쁜 게 있다. <strong>안 터지는</strong> 실패다.
+</p>
+
+<p>
+<code>security()</code>가 LLM에 요청을 보냈는데 응답이 안 온다. 에러도 안 난다. 그냥 조용하다.
+파이썬 입장에서 이건 <strong>완벽하게 정상인 상태</strong>다 — 네트워크 응답을 기다리는 중일 뿐.
+</p>
+
+<p>
+그러면 <code>gather()</code>는 어떻게 될까. <strong>영원히 안 끝난다.</strong>
+셋은 이미 끝났는데 하나를 기다리며 계속 서 있다.
+</p>
+
+<p class="callout">
+<strong>이건 데드락이 아니다.</strong> 데드락은 A가 B를 기다리고 B가 A를 기다리는 <em>순환</em>이다.
+여기엔 순환이 없다 — 애그리게이터가 노드를 기다릴 뿐, 노드는 아무도 안 기다린다.
+그래서 <strong>어떤 데드락 탐지기도 이걸 못 잡는다.</strong> 잡을 게 없으니까.<br><br>
+증상은 하나다: DB에 <code>status = 'running'</code>인 리뷰가 <strong>영원히 남는다.</strong>
+</p>
+
+<p>
+실패는 시끄럽다 — 스택 트레이스가 뜨고 로그가 남는다.
+<strong>멈춤은 조용하다.</strong> 아무 일도 안 일어나는 게 증상이니까.
+</p>
+
+<p>
+그래서 타임아웃이 필요하다. 타임아웃은 성능 장치가 아니라
+<strong>"조용한 멈춤을 시끄러운 실패로 번역하는 장치"</strong>다.
+시간이 지났다는 사실 자체를 <strong>사건</strong>으로 바꾼다.
+</p>
+
+<pre><code>async with asyncio.timeout(30):
+    result = await security(diff)</code></pre>
+
+<p class="callout">
+"If <code>long_running_task</code> takes more than 10 seconds to complete, the context manager will
+<strong>cancel the current task</strong> and handle the resulting <code>CancelledError</code> internally,
+<strong>transforming it into a <code>TimeoutError</code></strong> which can be caught and handled."<br>
+— <a href="https://docs.python.org/3/library/asyncio-task.html">Python 공식 문서, asyncio — Timeouts</a>
+</p>
+
+<p>
+<code>TimeoutError</code>가 되는 순간 이건 <strong>3절에서 다룬 평범한 예외</strong>가 된다.
+<code>failed: ["security"]</code>에 이름이 올라가고, 게이트가 판단할 수 있는 재료가 된다.
+<strong>타임아웃의 값어치는 "빨리 끝내는 것"이 아니라 "판단 가능한 것으로 만드는 것"이다.</strong>
+</p>
+
+<div class="quiz" data-answer="3">
+  <p class="quiz-q">LLM이 응답을 영영 안 주는데 타임아웃이 없다. 무슨 일이 생기나?</p>
+  <ol class="quiz-opts">
+    <li data-fb="데드락은 서로가 서로를 기다리는 순환이다. 여긴 한 방향이라 탐지기가 잡을 게 없다.">데드락이 나서 워커가 멈춘다</li>
+    <li data-fb="에러가 나면 오히려 다행이다. 응답 대기는 파이썬에게 완벽히 정상인 상태다.">에러가 나서 노드가 죽는다</li>
+    <li data-fb="정상 대기로 보이므로 아무 신호도 안 뜬다. status='running' 인 리뷰가 영원히 남는다.">대기 상태로 조용히 남는다</li>
+    <li data-fb="애그리게이터는 팬인 지점에서 전부를 기다린다. 대신 진행하려면 타임아웃이 먼저 있어야 한다.">다른 노드가 대신 진행한다</li>
+  </ol>
+</div>
+
+<h2>5. 막다른 길 없음 — 입력이 0개일 때</h2>
+
+<p>넷이 다 죽었다고 하자. 애그리게이터가 받는 findings는 빈 리스트다.</p>
+
+<pre><code>overall = max(f.confidence for f in findings)
+<span class="c-bad"># ValueError: max() arg is an empty sequence</span></code></pre>
+
+<p>
+애그리게이터가 죽는다. 그러면 그래프가 게이트까지 <strong>도달하지 못한다.</strong>
+리뷰는 <code>running</code>에 멈춘다. 4절의 증상과 <strong>똑같은 모양</strong>인데 원인이 정반대다.
+</p>
+
+<div class="keystone">
+실패를 다루는 코드가 실패하면,<br>실패를 다룰 곳이 <strong>사라진다.</strong>
+</div>
+
+<p>
+영상이 <strong>"막다른 길 없음(no dead ends)"</strong>이라고 부르는 요구가 이거다 [01:21:48].
+모든 경로가 <strong>어딘가에 도착</strong>해야 한다.
+</p>
+
+<p>
+사고방식을 바꿔야 한다. <strong>입력 0개는 예외 상황이 아니라 정상 입력의 하나다.</strong>
+빈 findings를 받았을 때의 올바른 동작은 죽는 게 아니라
+<code>status='failed'</code>로 <strong>도착하는 것</strong>이다. 그것도 결과다 —
+"볼 게 없었다"를 사람에게 정직하게 말하는 결과.
+</p>
+
+<h2>6. LangGraph 함정 — superstep은 트랜잭션이다</h2>
+
+<p>
+M5는 LangGraph로 이 그래프를 짠다. 여기서 <strong>예상을 뒤집는 문장</strong>이 하나 있다.
+</p>
+
+<p class="callout">
+"LangGraph executes nodes within supersteps, meaning that while parallel branches are executed
+in parallel, <strong>the entire superstep is transactional</strong>.
+If any of these branches raises an exception, <strong>none of the updates are applied to the state</strong>
+(the entire superstep errors)."<br>
+— <a href="https://docs.langchain.com/oss/python/langgraph/use-graph-api">LangChain 공식 문서, Use the graph API</a>
+</p>
+
+<p>
+읽어보면 3절보다 <strong>더 나쁘다.</strong> <code>security</code>가 터지면
+성공한 <code>quality</code>·<code>testing</code>·<code>docs</code>의 결과까지
+<strong>state에 하나도 안 남는다.</strong> 셋이라도 건지려던 계획이 통째로 날아간다.
+</p>
+
+<p>
+그래서 결론이 나온다. <strong>예외가 노드 밖으로 나가면 안 된다.</strong>
+</p>
+
+<pre><code>async def security_node(state):
+    try:
+        async with asyncio.timeout(30):
+            return {"findings": await security(state["diff"]),
+                    "completed": ["security"]}
+    except (Exception, TimeoutError):
+        return {"findings": [], "failed": ["security"]}
+        <span class="c-good">↑ 예외가 아니라 "값"으로 나간다. superstep 이 안 터진다.</span></code></pre>
+
+<p>
+실패를 <strong>예외로 전파하지 않고 데이터로 표현</strong>하는 것.
+3절의 <code>failed: [...]</code>가 왜 그 모양이어야 했는지가 여기서 완결된다.
+</p>
+
+<p>
+그리고 각 노드가 리스트를 <em>덧붙이려면</em> state에 <strong>리듀서(reducer)</strong>가 필요하다.
+안 걸면 뒤에 끝난 노드가 앞의 값을 <strong>덮어쓴다</strong> — 넷이 돌았는데 findings가 하나만 남는다.
+</p>
+
+<pre><code>class ReviewState(TypedDict):
+    findings:  Annotated[list, operator.add]   <span class="c-good">← 이어붙인다</span>
+    failed:    Annotated[list, operator.add]
+    diff:      str                              <span class="c-comment"># 아무도 안 고치니 리듀서 불필요</span></code></pre>
+
+<div class="quiz" data-answer="2">
+  <p class="quiz-q">LangGraph에서 병렬 브랜치 하나가 예외를 던졌다. 성공한 나머지의 state 업데이트는?</p>
+  <ol class="quiz-opts">
+    <li data-fb="문서가 정반대다 — none of the updates are applied. superstep 은 전부 아니면 전무다.">성공한 것만 반영되어 남는다</li>
+    <li data-fb="superstep 이 트랜잭션이라 통째로 롤백된다. 그래서 예외를 노드 안에서 값으로 바꿔야 한다.">하나도 반영되지 않고 끝난다</li>
+    <li data-fb="재시도 정책은 따로 걸어야 하고, 걸어도 실패가 이어지면 결국 superstep 이 에러난다.">재시도 후에 자동 병합된다</li>
+    <li data-fb="리듀서는 성공한 업데이트끼리 합치는 규칙이다. 반영 자체가 안 되면 합칠 것도 없다.">리듀서가 빈 값으로 채운다</li>
+  </ol>
+</div>
+
+<h2>정리 — 다섯 문장</h2>
+
+<div class="table-scroll">
+<table>
+  <tr><th>#</th><th>알게 된 것</th></tr>
+  <tr><td>1</td><td>병렬은 <strong>서로의 출력을 안 쓸 때만</strong> 안전하다. 아니면 얻는 건 속도가 아니라 충돌</td></tr>
+  <tr><td>2</td><td><code>gather()</code> 기본값은 나머지를 <strong>취소하지 않는다</strong>. 고아 태스크가 토큰을 태운다</td></tr>
+  <tr><td>3</td><td>예외를 <strong>받는 것</strong>과 <strong>하류에 전달하는 것</strong>은 다르다. findings 옆에 <code>failed</code>를 동봉해야 한다</td></tr>
+  <tr><td>4</td><td>타임아웃은 성능 장치가 아니라 <strong>조용한 멈춤을 판단 가능한 사건으로 바꾸는 번역기</strong></td></tr>
+  <tr><td>5</td><td>LangGraph superstep은 <strong>트랜잭션</strong>이다. 예외를 노드 밖으로 내보내면 성공한 결과까지 날아간다</td></tr>
+</table>
+</div>
+
+<h2>우리 코드로 어디에 떨어지나</h2>
+
+<p>
+아직 아무것도 없다. <strong>M5에서 만들 것</strong>이다:
+<code>backend/orchestration/engine.py</code>(추상)와
+<code>backend/orchestration/langgraph_engine.py</code>(구현).
+</p>
+
+<p>
+착지점만 이미 파여 있다 — <code>migrations/004_truth.sql</code>의
+<code>status</code>와 <code>failed_agents</code>. 3절에서 만든
+<code>{"findings": ..., "failed": [...]}</code>가 그대로 저 두 컬럼으로 들어간다.
+</p>
+
+<p class="callout">
+<strong>M5 완료 판정 ③이 이 레슨 전체의 시험이다:</strong>
+"한 노드를 일부러 무한 대기시켜도 <strong>타임아웃 후 애그리게이터가 나머지로 진행</strong>한다."<br><br>
+그리고 그때 확인할 것 하나 더 — <strong>진행했다는 사실만 보지 말 것.</strong>
+결과에 <code>failed: ["security"]</code>가 실제로 들어 있는지까지 봐야 한다.
+<a href="0005-four-doors-to-delete.html">Lesson 05</a>에서
+"막히는 것만 보면 무엇을 막았는지 모른다"고 했던 것과 같은 함정이다.
+</p>
+
+<div class="footer">
+  <h3>1차 출처</h3>
+  <p>
+    <a href="https://docs.python.org/3/library/asyncio-task.html">Python — asyncio: Coroutines and Tasks</a><br>
+    <strong>먼저 읽을 것.</strong> <code>gather()</code> 절과 <code>Timeouts</code> 절 두 군데면 충분하다.
+    <code>return_exceptions</code> 설명 바로 아래 "won't be cancelled" 한 문장이 2절 전체를 만들었다.
+  </p>
+  <p>
+    <a href="https://docs.langchain.com/oss/python/langgraph/use-graph-api">LangChain — Use the graph API</a><br>
+    "Create branches" 절의 <em>Exception handling?</em> 접힌 블록을 꼭 펼쳐볼 것.
+    superstep이 트랜잭션이라는 문장이 거기 있다. 리듀서 절도 같이.
+  </p>
+  <p>
+    영상 [01:59:50] 병렬화의 정당성 · [01:21:48] 오케스트레이션 데드락과 "막다른 길 없음"
+  </p>
+
+  <h3>다음</h3>
+  <ul class="next-steps">
+    <li><strong>시뮬레이터로 굴려보기</strong> — 노드를 하나씩 죽여보고 게이트가 뭘 보는지.
+        <code>/tycoon-sim</code> 으로 만든다</li>
+    <li><strong><code>NOTEBOOK.md</code>에 내 말로 3줄</strong> — 레슨을 다시 열지 말고 쓸 것</li>
+    <li><strong>G6 결정</strong> — 애그리게이터 계약(dedup 키·severity 충돌). M5 브리핑 직전</li>
+    <li><a href="0001-schema-not-prompt.html">Lesson 01 — JSON을 부탁하지 말고 스키마로 강제하라</a> ·
+        같은 모양의 교훈(부탁이 아니라 구조로 못 박기)</li>
+  </ul>
+
+  <p style="margin-top:1.5rem">
+    <strong>혼자 해보면 좋은 것:</strong> 파이썬 파일 하나에 <code>asyncio.sleep</code>으로
+    가짜 에이전트 넷을 만들고, 하나만 <code>raise</code> 시켜서 기본 <code>gather()</code>로 돌려봐라.
+    나머지 셋이 <strong>정말 계속 도는지</strong> 각 함수 끝에 <code>print</code>를 박아 눈으로 확인할 것.
+    문서를 읽고 믿는 것과 출력이 뜨는 걸 보는 건 다르다.
+  </p>
+
+  <p>
+    막히거나 애매한 부분은 그대로 물어보면 된다. 이 레슨을 쓴 에이전트가 선생이다.
+  </p>
+</div>
+
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

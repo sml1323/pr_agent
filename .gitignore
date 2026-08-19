@@ -26,3 +26,19 @@ reference_books/
 # 우리가 만든 요약(docs/01-chapter-map.md)과 구조화 추출본(segment_map.json)은 커밋한다.
 docs/source/transcript.txt
 docs/source/transcript.en.json3
+
+# 구조화 추출본(252K) — 원문 인용은 없지만 촘촘해서 원본의 대체재에
+# 가까워질 수 있다. 설계 근거는 docs/*.md 안의 타임스탬프 인용으로 충분하다.
+docs/source/segment_map.json
+
+# 챕터 맵 — 영상 전 구간을 타임스탬프별로 매핑한 우리 요약(50K).
+# 우리 글이지만 촘촘해서 원본을 대신할 소지가 있어 공개 레포에서는 뺀다.
+# 로컬에는 남아 설계 근거를 되짚는 데 계속 쓰인다.
+docs/01-chapter-map.md
+
+# 파이썬 캐시
+__pycache__/
+*.pyc
+
+# 머신별 Claude Code 설정 (권한 허용 목록 등) — 스킬은 커밋한다
+.claude/settings.local.json

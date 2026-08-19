@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sim 03 — 서명 실험실</title>
+<style>
+  :root{--bg:#0f1620;--panel:#172231;--panel2:#1e2c3f;--rule:#2c3e55;--fg:#e8eef6;
+    --muted:#93a4bb;--ok:#3ecf8e;--bad:#ff6b6b;--warn:#ffb454;--accent:#5aa9ff;--ghost:#7c6bb0}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard",sans-serif}
+  #app{display:flex;height:100vh}
+  .col{display:flex;flex-direction:column;min-width:0;overflow-y:auto}
+  #left{width:268px;flex:none;background:var(--panel);border-right:1px solid var(--rule)}
+  #mid{flex:1.25;border-right:1px solid var(--rule)}
+  #right{flex:1;background:var(--panel)}
+
+  h1{font-size:.95rem;margin:0;padding:14px 15px 3px}
+  .sub{font-size:.7rem;color:var(--muted);padding:0 15px 11px;line-height:1.55}
+  .sec{border-top:1px solid var(--rule);padding:11px 15px}
+  .sec h2{font-size:.66rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);
+    margin:0 0 8px;font-weight:600}
+  .pane{padding:13px 16px}
+  .pane h3{font-size:.72rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);
+    margin:0 0 7px;font-weight:600}
+  .pane .note{font-size:.7rem;color:var(--muted);margin:0 0 8px;line-height:1.55}
+
+  .lv{padding:8px 9px;margin-bottom:4px;border:1px solid var(--rule);border-radius:6px;
+    background:var(--panel2);cursor:pointer;font-size:.73rem;line-height:1.4}
+  .lv:hover{border-color:var(--accent)}
+  .lv.cur{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--panel2))}
+  .lv.done{border-color:var(--ok)}
+  .lv .n{font-family:ui-monospace,Menlo,monospace;font-size:.66rem;color:var(--muted)}
+  .lv.done .n{color:var(--ok)}
+  .lv .g{display:block;color:var(--muted);font-size:.65rem;margin-top:3px}
+
+  .tog{display:flex;gap:8px;align-items:flex-start;padding:7px 8px;margin-bottom:4px;
+    border:1px solid var(--rule);border-radius:6px;cursor:pointer;background:var(--panel2)}
+  .tog:hover{border-color:var(--accent)}
+  .tog.on{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 13%,var(--panel2))}
+  .tog .box{width:14px;height:14px;flex:none;margin-top:2px;border-radius:3px;
+    border:1.5px solid var(--muted);display:grid;place-items:center;font-size:9px}
+  .tog.on .box{border-color:var(--warn);background:var(--warn);color:#1a1000}
+  .tog .t{font-size:.75rem;line-height:1.35}
+  .tog .t small{display:block;color:var(--muted);font-size:.63rem;margin-top:2px;line-height:1.4}
+
+  .mission{background:var(--panel2);border:1px solid var(--rule);border-radius:7px;
+    padding:11px 13px;margin-bottom:13px;font-size:.79rem;line-height:1.6}
+  .mission b{color:var(--warn)}
+  .mission .goal{color:var(--accent);font-weight:600}
+
+  input[type=text],textarea{width:100%;background:#111a26;color:var(--fg);border:1px solid var(--rule);
+    border-radius:6px;padding:8px 10px;font-family:ui-monospace,Menlo,monospace;font-size:.75rem;
+    line-height:1.55;resize:vertical}
+  input[type=text]:focus,textarea:focus{outline:none;border-color:var(--accent)}
+  textarea{min-height:62px}
+  label.f{display:block;font-size:.68rem;color:var(--muted);margin:9px 0 4px}
+
+  .bytes{background:#111a26;border:1px solid var(--rule);border-radius:6px;padding:9px 11px;
+    font-family:ui-monospace,Menlo,monospace;font-size:.67rem;line-height:1.7;
+    word-break:break-all;margin-bottom:4px;max-height:96px;overflow-y:auto}
+  .bytes .b{color:var(--muted)}
+  .bytes .b.diff{color:var(--warn);background:color-mix(in srgb,var(--warn) 20%,transparent);
+    border-radius:2px}
+
+  .sig{display:flex;flex-wrap:wrap;gap:2px;margin:7px 0 4px}
+  .sig span{width:15px;height:19px;display:grid;place-items:center;font-family:ui-monospace,Menlo,monospace;
+    font-size:.65rem;border-radius:3px;background:var(--panel2);color:var(--muted)}
+  .sig span.ch{background:color-mix(in srgb,var(--bad) 32%,var(--panel2));color:#fff;font-weight:600}
+  .stat{font-size:.68rem;color:var(--muted);margin-top:3px}
+  .stat b{color:var(--warn)}
+
+  .send{width:100%;padding:11px;border-radius:7px;border:1px solid var(--ok);background:transparent;
+    color:var(--ok);font-family:inherit;font-size:.86rem;font-weight:600;cursor:pointer;margin-bottom:12px}
+  .send:hover{background:color-mix(in srgb,var(--ok) 14%,transparent)}
+
+  .out{border:1px solid var(--rule);border-radius:7px;padding:12px 13px;background:var(--panel2)}
+  .out .v{font-size:.88rem;font-weight:700;margin-bottom:8px}
+  .out .v.ok{color:var(--ok)} .out .v.bad{color:var(--bad)}
+  .out .ex{font-size:.75rem;line-height:1.65}
+  .out .ex em{color:var(--warn);font-style:normal}
+  .out .ex code{font-family:ui-monospace,Menlo,monospace;font-size:.7rem;color:var(--accent)}
+  .out pre{background:#0d1520;border:1px solid var(--rule);border-radius:5px;padding:8px 10px;
+    font-family:ui-monospace,Menlo,monospace;font-size:.67rem;line-height:1.6;margin:0 0 9px;
+    white-space:pre-wrap;word-break:break-all}
+  .verdict{margin-top:10px;padding:8px 11px;border-radius:6px;font-size:.76rem;font-weight:600}
+  .verdict.win{background:color-mix(in srgb,var(--ok) 16%,transparent);border:1px solid var(--ok);color:var(--ok)}
+  .verdict.lose{background:color-mix(in srgb,var(--bad) 14%,transparent);border:1px solid var(--bad);color:var(--bad)}
+
+  .cmp{display:flex;gap:2px;flex-wrap:wrap;margin:6px 0}
+  .cmp span{width:14px;height:18px;display:grid;place-items:center;font-family:ui-monospace,Menlo,monospace;
+    font-size:.62rem;border-radius:3px;background:var(--panel2);color:var(--muted)}
+  .cmp span.eq{background:color-mix(in srgb,var(--ok) 26%,var(--panel2));color:#dff}
+  .cmp span.ne{background:color-mix(in srgb,var(--bad) 34%,var(--panel2));color:#fff}
+  .cmp span.skip{opacity:.22}
+
+  .hintbtn{background:none;border:none;color:var(--accent);font-family:inherit;font-size:.7rem;
+    cursor:pointer;padding:0;border-bottom:1px solid color-mix(in srgb,var(--accent) 40%,transparent)}
+  .hinttext{font-size:.71rem;color:var(--muted);line-height:1.6;margin-top:7px;display:none}
+  .hinttext.show{display:block}
+  .badge{display:inline-block;font-size:.62rem;padding:1px 6px;border-radius:20px;
+    border:1px solid var(--rule);color:var(--muted);font-family:ui-monospace,Menlo,monospace}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="col" id="left">
+    <h1>서명 실험실</h1>
+    <p class="sub">HMAC 을 <b>진짜로 계산한다.</b><br>
+      브라우저 안에서 SHA-256 을 직접 돌리므로<br>이 화면의 숫자는 지어낸 게 아니다.</p>
+
+    <div class="sec">
+      <h2>미션</h2>
+      <div id="levels"></div>
+    </div>
+
+    <div class="sec">
+      <h2>서버 설정</h2>
+      <div class="tog" data-s="reparse"><div class="box">✓</div><div class="t">파싱 후 재직렬화
+        <small>raw body 대신 json.dumps(json.loads(body)) 에 서명 검증</small></div></div>
+      <div class="tog" data-s="naive"><div class="box">✓</div><div class="t">== 로 비교
+        <small>compare_digest 대신. 첫 불일치에서 멈춘다</small></div></div>
+    </div>
+
+    <div class="sec">
+      <h2>공격자 모드</h2>
+      <div class="tog" data-s="attacker"><div class="box">✓</div><div class="t">secret 을 모른다
+        <small>서명을 직접 손으로 써야 한다</small></div></div>
+    </div>
+  </div>
+
+  <div class="col" id="mid">
+    <div class="pane">
+      <div class="mission" id="mission"></div>
+
+      <h3>① GitHub 쪽 — 보낼 것</h3>
+      <label class="f">WEBHOOK_SECRET <span class="badge">양쪽이 같은 값을 안다</span></label>
+      <input type="text" id="secret" spellcheck="false" value="s3cr3t-webhook-key">
+      <label class="f">raw body <span class="badge">바이트 그대로</span></label>
+      <textarea id="body" spellcheck="false">{"action":"opened","number":42}</textarea>
+      <div class="bytes" id="bytesView"></div>
+      <div class="stat" id="bytesStat"></div>
+    </div>
+
+    <div class="pane" style="border-top:1px solid var(--rule)">
+      <h3>② 계산된 서명 <span class="badge">HMAC-SHA256</span></h3>
+      <p class="note">한 글자만 바꿔도 <b>거의 전부 바뀐다.</b> 직전 계산과 다른 칸이 붉게 표시된다.</p>
+      <div class="sig" id="sigGrid"></div>
+      <div class="stat" id="sigStat"></div>
+      <label class="f" id="hdrLabel">보낼 헤더 <code>X-Hub-Signature-256</code></label>
+      <input type="text" id="sendSig" spellcheck="false" readonly>
+    </div>
+  </div>
+
+  <div class="col" id="right">
+    <div class="pane">
+      <h3>③ 서버가 검증한다</h3>
+      <p class="note">누르기 전에 정해라 — <b>통과할까, 거부될까?</b></p>
+      <button class="send" id="send">웹훅 전송 ▶</button>
+      <div class="out" id="out">
+        <div class="v" style="color:var(--muted)">아직 전송 안 함</div>
+        <div class="ex" style="color:var(--muted)">왼쪽에서 미션을 고르고, 가운데를 만진 다음 전송한다.</div>
+      </div>
+      <div style="margin-top:11px">
+        <button class="hintbtn" id="hintBtn">힌트 보기</button>
+        <div class="hinttext" id="hintText"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+"use strict";
+
+// ═══════════════════════════════════════════════════════════
+// 1. SHA-256 + HMAC 을 직접 구현한다.
+//    crypto.subtle 은 file:// 에서 secure context 가 아닐 수 있어 쓰지 않는다.
+//    아래 구현은 알려진 테스트 벡터로 자기 검증한다 (파일 맨 끝 selfTest).
+// ═══════════════════════════════════════════════════════════
+
+var K = [
+0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+
+function rotr(x,n){ return (x>>>n)|(x<<(32-n)); }
+
+function sha256(bytes) {
+  var H = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,
+           0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+  var len = bytes.length;
+  var withPad = new Uint8Array((((len + 8) >> 6) + 1) * 64);
+  withPad.set(bytes);
+  withPad[len] = 0x80;
+  var bitLen = len * 8;
+  // 길이는 64비트 빅엔디언. 우리 입력 크기에선 상위 32비트가 0이다.
+  new DataView(withPad.buffer).setUint32(withPad.length - 4, bitLen >>> 0, false);
+  new DataView(withPad.buffer).setUint32(withPad.length - 8, Math.floor(bitLen / 4294967296), false);
+
+  var w = new Uint32Array(64);
+  for (var i = 0; i < withPad.length; i += 64) {
+    for (var t = 0; t < 16; t++) {
+      w[t] = (withPad[i+t*4]<<24)|(withPad[i+t*4+1]<<16)|(withPad[i+t*4+2]<<8)|withPad[i+t*4+3];
+    }
+    for (t = 16; t < 64; t++) {
+      var s0 = rotr(w[t-15],7) ^ rotr(w[t-15],18) ^ (w[t-15]>>>3);
+      var s1 = rotr(w[t-2],17) ^ rotr(w[t-2],19) ^ (w[t-2]>>>10);
+      w[t] = (w[t-16] + s0 + w[t-7] + s1) >>> 0;
+    }
+    var a=H[0],b=H[1],c=H[2],d=H[3],e=H[4],f=H[5],g=H[6],h=H[7];
+    for (t = 0; t < 64; t++) {
+      var S1 = rotr(e,6) ^ rotr(e,11) ^ rotr(e,25);
+      var ch = (e & f) ^ (~e & g);
+      var t1 = (h + S1 + ch + K[t] + w[t]) >>> 0;
+      var S0 = rotr(a,2) ^ rotr(a,13) ^ rotr(a,22);
+      var mj = (a & b) ^ (a & c) ^ (b & c);
+      var t2 = (S0 + mj) >>> 0;
+      h=g; g=f; f=e; e=(d+t1)>>>0; d=c; c=b; b=a; a=(t1+t2)>>>0;
+    }
+    H[0]=(H[0]+a)>>>0; H[1]=(H[1]+b)>>>0; H[2]=(H[2]+c)>>>0; H[3]=(H[3]+d)>>>0;
+    H[4]=(H[4]+e)>>>0; H[5]=(H[5]+f)>>>0; H[6]=(H[6]+g)>>>0; H[7]=(H[7]+h)>>>0;
+  }
+  var out = new Uint8Array(32);
+  for (i = 0; i < 8; i++) new DataView(out.buffer).setUint32(i*4, H[i], false);
+  return out;
+}
+
+function hmacSha256(keyBytes, msgBytes) {
+  var block = 64;
+  var k = keyBytes.length > block ? sha256(keyBytes) : keyBytes;
+  var pad = new Uint8Array(block);
+  pad.set(k);
+  var ipad = new Uint8Array(block), opad = new Uint8Array(block);
+  for (var i = 0; i < block; i++) { ipad[i] = pad[i] ^ 0x36; opad[i] = pad[i] ^ 0x5c; }
+  var inner = new Uint8Array(block + msgBytes.length);
+  inner.set(ipad); inner.set(msgBytes, block);
+  var ih = sha256(inner);
+  var outer = new Uint8Array(block + 32);
+  outer.set(opad); outer.set(ih, block);
+  return sha256(outer);
+}
+
+var enc = new TextEncoder();
+function hex(u8){ return Array.from(u8).map(function(b){ return b.toString(16).padStart(2,"0"); }).join(""); }
+function sign(secret, body){ return "sha256=" + hex(hmacSha256(enc.encode(secret), enc.encode(body))); }
+
+// 자기 검증 — 알려진 테스트 벡터. 실패하면 화면에 띄운다.
+function selfTest() {
+  var a = hex(sha256(enc.encode("abc")));
+  var b = hex(hmacSha256(enc.encode("key"), enc.encode("The quick brown fox jumps over the lazy dog")));
+  return a === "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+      && b === "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8";
+}
+
+// ═══════════════════════════════════════════════════════════
+// 2. 레벨
+// ═══════════════════════════════════════════════════════════
+
+var LEVELS = [
+  { n:1, name:"정상 배달",
+    srv:{reparse:false, naive:false, attacker:false},
+    body:'{"action":"opened","number":42}', goal:"pass",
+    desc:"GitHub 이 raw body 에 서명해서 보낸다. 서버는 같은 secret 으로 다시 계산해 대조한다.",
+    goalText:"그대로 전송해서 통과시켜라",
+    hint:"아무것도 안 바꾸고 전송하면 된다. 서명은 이미 body 로부터 계산돼 있다." },
+
+  { n:2, name:"한 글자",
+    srv:{reparse:false, naive:false, attacker:false},
+    body:'{"action":"opened","number":42}', goal:"reject",
+    desc:"공격자가 <b>body 만</b> 바꾸고 서명 헤더는 그대로 보낸다.",
+    goalText:"body 를 고쳐 서버가 <b>거부</b>하게 만들어라 — 서명 격자가 얼마나 바뀌는지 볼 것",
+    hint:"숫자 42 를 43 으로 바꿔 보자. 서명 64칸 중 몇 칸이 붉어지나? 한 비트 차이가 출력 전체를 흔드는 걸 눈사태 효과(avalanche)라고 한다.",
+    lockSig:true },
+
+  { n:3, name:"같은 뜻, 다른 바이트",
+    srv:{reparse:true, naive:false, attacker:false},
+    body:'{"action":"opened","number":42}', goal:"reject",
+    desc:"서버가 <b>파싱한 뒤 다시 직렬화한 바이트</b>에 서명을 검증한다. 흔한 실수다.",
+    goalText:"body 를 <b>하나도 안 고치고</b> 전송해서 거부되는 걸 확인하라",
+    hint:"json.loads 는 공백·키 순서·이스케이프를 버린다. json.dumps 로 되돌리면 <b>내용은 같은데 바이트가 다르다.</b> 서명된 것은 뜻이 아니라 바이트다." },
+
+  { n:4, name:"secret 없이 위조",
+    srv:{reparse:false, naive:false, attacker:true},
+    body:'{"action":"opened","number":42,"merged":true}', goal:"reject",
+    desc:"너는 공격자다. body 는 마음대로 쓸 수 있지만 <b>secret 을 모른다.</b>",
+    goalText:"유효한 서명을 만들어 보고 — <b>왜 안 되는지</b> 확인하라",
+    hint:"서명 칸에 아무 16진수나 써 볼 수 있다. 64자리 중 하나만 틀려도 거부다. 경우의 수는 16의 64승 — 우주의 원자 수보다 많다. <b>HMAC 은 자물쇠가 아니라 봉인이다.</b> 내용을 숨기지 않고 변조만 드러낸다." },
+
+  { n:5, name:"비교가 시간을 흘린다",
+    srv:{reparse:false, naive:true, attacker:false},
+    body:'{"action":"opened","number":42}', goal:"reject",
+    desc:"서버가 <code>==</code> 로 서명을 대조한다. <b>첫 불일치에서 즉시 멈춘다.</b>",
+    goalText:"틀린 서명을 보내고 <b>비교가 몇 글자에서 멈추는지</b> 볼 것",
+    hint:"공격자 모드를 켜고 서명 앞자리를 조금씩 맞춰 가면, 맞을수록 비교가 오래 걸린다. 그 시간 차이가 <b>정답을 한 글자씩 알려준다.</b> 그래서 hmac.compare_digest 가 필요하다 — 항상 끝까지 비교한다.",
+    attackerOpt:true }
+];
+
+var state = { lv:0, srv:{}, prevSig:null, lastSig:null, done:{} };
+
+// ═══════════════════════════════════════════════════════════
+// 3. 서버 검증 — 실제 계산으로 판정한다
+// ═══════════════════════════════════════════════════════════
+
+function reserialize(body) {
+  // json.loads → json.dumps 를 흉내낸다. 실패하면 원본 그대로.
+  try { return JSON.stringify(JSON.parse(body)); } catch (e) { return body; }
+}
+
+function verify(secret, body, sentSig, srv) {
+  var checked = srv.reparse ? reserialize(body) : body;
+  var expect = sign(secret, checked);
+  var ok = expect === sentSig;
+
+  // == 비교는 첫 불일치에서 멈춘다. 몇 글자를 봤는지가 곧 새는 정보다.
+  var compared = expect.length;
+  if (srv.naive && !ok) {
+    compared = 0;
+    for (var i = 0; i < Math.max(expect.length, sentSig.length); i++) {
+      compared++;
+      if (expect[i] !== sentSig[i]) break;
+    }
+  }
+  return { ok:ok, expect:expect, checked:checked, compared:compared, total:expect.length };
+}
+
+// ═══════════════════════════════════════════════════════════
+// 4. UI
+// ═══════════════════════════════════════════════════════════
+
+var $ = function(id){ return document.getElementById(id); };
+var elSecret = $("secret"), elBody = $("body"), elSendSig = $("sendSig");
+
+function renderLevels() {
+  var el = $("levels"); el.innerHTML = "";
+  LEVELS.forEach(function (L, i) {
+    var d = document.createElement("div");
+    d.className = "lv" + (i === state.lv ? " cur" : "") + (state.done[L.n] ? " done" : "");
+    d.innerHTML = '<span class="n">' + (state.done[L.n] ? "✓" : "L" + L.n) + '</span> ' + L.name +
+                  '<span class="g">' + L.goalText.replace(/<[^>]+>/g,"") + '</span>';
+    d.addEventListener("click", function(){ loadLevel(i); });
+    el.appendChild(d);
+  });
+}
+
+function loadLevel(i) {
+  var L = LEVELS[i];
+  state.lv = i;
+  state.srv = Object.assign({}, L.srv);
+  state.prevSig = null;
+  elBody.value = L.body;
+  $("hintText").classList.remove("show");
+  $("out").innerHTML = '<div class="v" style="color:var(--muted)">아직 전송 안 함</div>' +
+    '<div class="ex" style="color:var(--muted)">가운데를 만진 다음 전송한다.</div>';
+  recompute(true);
+}
+
+function bytesOf(s) {
+  var u = enc.encode(s);
+  return { u:u, n:u.length };
+}
+
+function recompute(resetPrev) {
+  var L = LEVELS[state.lv];
+  var secret = elSecret.value, body = elBody.value;
+  var sig = sign(secret, body);
+
+  // ── 바이트 뷰 — 파싱 후 재직렬화와 다른 곳을 표시 ──
+  var b = bytesOf(body);
+  var re = reserialize(body);
+  var reB = bytesOf(re);
+  var same = re === body;
+  var html = "";
+  for (var i = 0; i < Math.min(b.n, 96); i++) {
+    var d = (!same && (i >= reB.n || b.u[i] !== reB.u[i]));
+    html += '<span class="b' + (d ? " diff" : "") + '">' + b.u[i].toString(16).padStart(2,"0") + '</span> ';
+  }
+  if (b.n > 96) html += '<span class="b">…</span>';
+  $("bytesView").innerHTML = html;
+  $("bytesStat").innerHTML = b.n + " 바이트" +
+    (same ? '  ·  <span style="color:var(--ok)">파싱 후 재직렬화해도 동일</span>'
+          : '  ·  <b>재직렬화하면 ' + reB.n + ' 바이트로 바뀐다</b> (노란 칸이 달라지는 지점)');
+
+  // ── 서명 격자 — 직전과 다른 칸을 붉게 ──
+  var hexPart = sig.slice(7);
+  var grid = "";
+  var changed = 0;
+  for (i = 0; i < hexPart.length; i++) {
+    var ch = state.prevSig && state.prevSig[i] !== hexPart[i];
+    if (ch) changed++;
+    grid += '<span class="' + (ch ? "ch" : "") + '">' + hexPart[i] + '</span>';
+  }
+  $("sigGrid").innerHTML = grid;
+  $("sigStat").innerHTML = state.prevSig
+    ? "직전 계산과 <b>" + changed + "/64</b> 칸이 달라졌다 (" + Math.round(changed/64*100) + "%)"
+    : "body 나 secret 을 한 글자 바꿔 보면 여기가 얼마나 흔들리는지 보인다";
+  if (!resetPrev) state.prevSig = hexPart;
+  else state.prevSig = hexPart;
+
+  state.lastSig = sig;
+
+  // ── 공격자 모드면 서명을 손으로 쓴다 ──
+  var atk = state.srv.attacker;
+  elSendSig.readOnly = !atk;
+  elSecret.type = atk ? "password" : "text";
+  $("hdrLabel").innerHTML = "보낼 헤더 <code>X-Hub-Signature-256</code>" +
+    (atk ? ' <span class="badge" style="color:var(--bad);border-color:var(--bad)">직접 입력 — secret 을 모른다</span>' : "");
+  if (!atk) elSendSig.value = sig;
+  else if (!elSendSig.value || elSendSig.value === sig) elSendSig.value = "sha256=";
+
+  // L2 는 서명을 고정한다 — body 만 바꾸고 헤더는 그대로 보내는 상황이므로
+  if (L.lockSig && !atk) {
+    if (!state.lockedSig) state.lockedSig = sign(secret, L.body);
+    elSendSig.value = state.lockedSig;
+    $("hdrLabel").innerHTML = '보낼 헤더 <code>X-Hub-Signature-256</code> ' +
+      '<span class="badge" style="color:var(--warn);border-color:var(--warn)">원본 body 로 계산된 값 — 고정</span>';
+  }
+
+  $("mission").innerHTML = "<b>L" + L.n + " · " + L.name + "</b><br>" + L.desc +
+    '<br><br><span class="goal">목표:</span> ' + L.goalText;
+  $("hintText").innerHTML = L.hint;
+
+  document.querySelectorAll(".tog").forEach(function (t) {
+    t.classList.toggle("on", !!state.srv[t.dataset.s]);
+  });
+  renderLevels();
+}
+
+elBody.addEventListener("input", function(){ recompute(false); });
+elSecret.addEventListener("input", function(){ state.lockedSig = null; recompute(false); });
+document.querySelectorAll(".tog").forEach(function (t) {
+  t.addEventListener("click", function () {
+    state.srv[t.dataset.s] = !state.srv[t.dataset.s];
+    recompute(true);
+  });
+});
+$("hintBtn").addEventListener("click", function(){ $("hintText").classList.toggle("show"); });
+
+$("send").addEventListener("click", function () {
+  var L = LEVELS[state.lv];
+  var v = verify(elSecret.value, elBody.value, elSendSig.value.trim(), state.srv);
+  var win = (v.ok ? "pass" : "reject") === L.goal;
+  if (win) state.done[L.n] = true;
+
+  var ex = "";
+  if (v.ok) {
+    ex = "보낸 서명과 서버가 계산한 값이 <em>바이트 단위로 일치</em>한다.<br><br>"
+       + "다만 이게 증명하는 건 <em>출처</em>뿐이다 — body 안의 내용이 안전하다는 뜻은 아니다. "
+       + "그건 <code>Lesson 02</code> 의 트러스트 바운더리가 따로 막는다.";
+  } else if (state.srv.reparse) {
+    ex = "서버가 검증한 바이트가 <em>보낸 것과 다르다.</em><br><br>"
+       + "<code>json.loads</code> 는 공백·키 순서·이스케이프를 버린다. "
+       + "<code>json.dumps</code> 로 되돌린 건 <em>같은 뜻의 다른 바이트</em>다.<br><br>"
+       + "<em>서명된 것은 뜻이 아니라 바이트다.</em> 그래서 서명 검증은 반드시 "
+       + "<code>await request.body()</code> 의 raw 바이트에 해야 한다 — 파싱보다 먼저.";
+  } else if (state.srv.attacker) {
+    ex = "16진수 64자리 중 <em>하나만 틀려도</em> 거부다. 경우의 수는 16<sup>64</sup>.<br><br>"
+       + "<em>HMAC 은 자물쇠가 아니라 봉인이다.</em> 내용을 숨기지 않는다 — body 는 평문 그대로 간다. "
+       + "대신 <em>누가 만졌는지</em>를 드러낸다. secret 을 모르면 유효한 봉인을 찍을 수 없다.";
+  } else {
+    ex = "body 가 바뀌었는데 서명은 원본 것이다. 서버가 다시 계산한 값과 안 맞는다.<br><br>"
+       + "한 글자 차이가 서명 전체를 흔든다 — <em>눈사태 효과(avalanche)</em>. "
+       + "그래서 '조금만 고치기' 가 통하지 않는다.";
+  }
+
+  var timing = "";
+  if (state.srv.naive) {
+    var cmp = "";
+    for (var i = 0; i < v.total; i++) {
+      var cls = i < v.compared - 1 ? "eq" : (i === v.compared - 1 && !v.ok ? "ne" : (v.ok ? "eq" : "skip"));
+      cmp += '<span class="' + cls + '">' + v.expect.slice(7)[i % 64] + '</span>';
+    }
+    timing = '<div style="font-size:.72rem;color:var(--muted);margin:10px 0 4px">'
+      + '<code>==</code> 비교가 <b style="color:var(--warn)">' + v.compared + '/' + v.total
+      + '</b> 글자에서 멈췄다</div><div class="cmp">' + cmp + '</div>'
+      + '<div style="font-size:.71rem;color:var(--muted);line-height:1.6;margin-top:6px">'
+      + '앞자리를 맞출수록 <em style="color:var(--warn);font-style:normal">더 오래 걸린다.</em> '
+      + '그 시간이 정답을 한 글자씩 알려준다.<br>'
+      + '<code style="color:var(--accent)">hmac.compare_digest</code> 는 결과와 무관하게 '
+      + '항상 끝까지 비교해서 이 새는 정보를 막는다.</div>';
+  }
+
+  $("out").innerHTML =
+    '<div class="v ' + (v.ok ? "ok" : "bad") + '">' +
+      (v.ok ? "✅ 200 — 통과" : "⛔ 400 — 거부") + '</div>' +
+    '<pre>서버가 검증한 바이트:\n' + v.checked.replace(/</g,"&lt;") +
+      '\n\n서버가 계산한 서명:\n' + v.expect +
+      '\n보낸 서명:\n' + (elSendSig.value.trim() || "(비어 있음)") + '</pre>' +
+    timing +
+    '<div class="ex">' + ex + '</div>' +
+    (win ? '<div class="verdict win">✔ L' + L.n + ' 클리어</div>'
+         : '<div class="verdict lose">✘ 목표와 다른 결과다 — 힌트를 보자</div>');
+});
+
+// 자기 검증 후 시작
+if (!selfTest()) {
+  document.body.innerHTML = '<div style="padding:40px;color:#ff6b6b;font-family:monospace">'
+    + 'SHA-256 자기 검증 실패 — 이 시뮬의 숫자를 믿으면 안 된다.</div>';
+} else {
+  loadLevel(0);
+}
+})();
+</script>
+</body>
+</html>

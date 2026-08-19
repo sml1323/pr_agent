@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sim 01 — 스키마 검문소</title>
+<style>
+  :root {
+    --bg:#0f1620; --panel:#172231; --panel2:#1e2c3f; --rule:#2c3e55;
+    --fg:#e8eef6; --muted:#93a4bb; --ok:#3ecf8e; --bad:#ff6b6b;
+    --warn:#ffb454; --accent:#5aa9ff; --ghost:#7c6bb0;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;background:var(--bg);color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard",sans-serif}
+  #app{display:flex;height:100vh}
+
+  #left{width:322px;flex:none;background:var(--panel);border-right:1px solid var(--rule);
+    display:flex;flex-direction:column;overflow-y:auto}
+  #left h1{font-size:1rem;margin:0;padding:14px 16px 4px}
+  #left .sub{font-size:.72rem;color:var(--muted);padding:0 16px 12px;line-height:1.55}
+  .sec{border-top:1px solid var(--rule);padding:12px 16px}
+  .sec h2{font-size:.68rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);
+    margin:0 0 4px;font-weight:600}
+  .sec .note{font-size:.68rem;color:var(--muted);margin:0 0 9px;line-height:1.5}
+
+  .blk{display:flex;gap:9px;align-items:flex-start;padding:8px 9px;margin-bottom:5px;
+    border:1px solid var(--rule);border-radius:6px;cursor:pointer;background:var(--panel2);
+    transition:border-color .12s,background .12s}
+  .blk:hover{border-color:var(--accent)}
+  .blk.on{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 12%,var(--panel2))}
+  .blk.on.fake{border-color:var(--ghost);background:color-mix(in srgb,var(--ghost) 16%,var(--panel2))}
+  .blk .box{width:15px;height:15px;flex:none;margin-top:2px;border-radius:3px;
+    border:1.5px solid var(--muted);display:grid;place-items:center;font-size:10px}
+  .blk.on .box{border-color:var(--ok);background:var(--ok);color:#04180f}
+  .blk.on.fake .box{border-color:var(--ghost);background:var(--ghost);color:#0f0a1a}
+  .blk code{font-family:ui-monospace,Menlo,monospace;font-size:.7rem;color:var(--accent);
+    display:block;line-height:1.4}
+  .blk .d{font-size:.66rem;color:var(--muted);margin-top:3px;line-height:1.45}
+
+  .util{display:flex;gap:6px;margin-top:4px}
+  .util button{flex:1;padding:8px;font-size:.73rem;border-radius:6px;cursor:pointer;
+    border:1px solid var(--rule);background:var(--panel2);color:var(--fg);font-family:inherit}
+  .util button:hover{border-color:var(--accent)}
+  .util button.primary{border-color:var(--ok);color:var(--ok)}
+  .util button:disabled{opacity:.4;cursor:default}
+
+  #score{padding:11px 16px;border-top:1px solid var(--rule);font-size:.73rem;color:var(--muted)}
+  #score div{display:flex;justify-content:space-between;margin-bottom:4px}
+  #score b{color:var(--fg)}
+  #score .g{color:var(--ok)} #score .r{color:var(--bad)}
+
+  #stage{flex:1;position:relative}
+  #cv{position:absolute;inset:0}
+  #labels{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+  .lab{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;font-size:.68rem;
+    font-family:ui-monospace,Menlo,monospace;background:rgba(15,22,32,.85);
+    border:1px solid var(--rule);border-radius:5px;padding:3px 7px}
+  .lab.dim{color:var(--muted)}
+  .lab.hit{border-color:var(--bad);color:var(--bad)}
+
+  #predict{position:absolute;inset:0;display:none;place-items:center;z-index:20;
+    background:rgba(8,12,18,.76);backdrop-filter:blur(3px)}
+  #predict.show{display:grid}
+  .card{width:min(470px,90vw);background:var(--panel);border:1px solid var(--rule);
+    border-radius:10px;padding:20px 22px}
+  .card .eyebrow{font-size:.65rem;text-transform:uppercase;letter-spacing:.11em;
+    color:var(--muted);margin-bottom:9px}
+  .card h3{margin:0 0 10px;font-size:.98rem}
+  .json{font-family:ui-monospace,Menlo,monospace;font-size:.74rem;background:var(--panel2);
+    border-radius:6px;padding:11px 13px;line-height:1.6;white-space:pre;overflow-x:auto}
+  .json .k{color:var(--accent)} .json .s{color:var(--ok)} .json .n{color:var(--warn)}
+  .card .ctx{font-size:.72rem;color:var(--muted);margin:11px 0 13px;line-height:1.55}
+  .choices{display:flex;gap:8px}
+  .choices button{flex:1;padding:12px 8px;border-radius:7px;cursor:pointer;border:1px solid var(--rule);
+    background:var(--panel2);color:var(--fg);font-family:inherit;font-size:.85rem;font-weight:600}
+  .choices button:hover{border-color:var(--accent)}
+
+  #result{position:absolute;right:16px;top:16px;width:min(390px,44vw);z-index:15;
+    background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:16px 18px;display:none}
+  #result.show{display:block}
+  #result .v{font-size:.95rem;font-weight:700;margin-bottom:3px}
+  #result .v.ok{color:var(--ok)} #result .v.bad{color:var(--bad)}
+  #result .g{font-size:.7rem;color:var(--muted);margin-bottom:11px}
+  #result .why{font-size:.78rem;line-height:1.65}
+  #result .why em{color:var(--warn);font-style:normal}
+  #result .why code{font-family:ui-monospace,Menlo,monospace;font-size:.72rem;color:var(--accent)}
+  #result .dmg{margin-top:11px;padding:9px 11px;border-radius:6px;font-size:.75rem;line-height:1.6;
+    background:color-mix(in srgb,var(--bad) 14%,var(--panel2));border:1px solid color-mix(in srgb,var(--bad) 40%,transparent)}
+  #result .dmg b{color:var(--bad)}
+  #result button{margin-top:12px;width:100%;padding:8px;border-radius:6px;cursor:pointer;
+    border:1px solid var(--rule);background:transparent;color:var(--muted);font-family:inherit;font-size:.75rem}
+  #result button:hover{color:var(--fg)}
+
+  #toast{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);background:var(--panel);
+    border:1px solid var(--rule);border-radius:7px;padding:9px 15px;font-size:.77rem;opacity:0;
+    transition:opacity .25s;z-index:18;max-width:70%;text-align:center;line-height:1.5}
+  #toast.show{opacity:1}
+  #hint{position:absolute;left:16px;bottom:16px;font-size:.68rem;color:var(--muted);
+    background:rgba(15,22,32,.7);border-radius:6px;padding:6px 10px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="left">
+    <h1>스키마 검문소</h1>
+    <p class="sub">LLM 이 뱉은 <b>Finding</b> 이 컨베이어로 들어온다.<br>
+      게이트에 <b>제약 블록을 끼워서</b> 나쁜 값을 막아라.<br>
+      막지 못한 값은 <b>하류에서 터진다.</b></p>
+
+    <div class="sec">
+      <h2>게이트에 끼울 블록</h2>
+      <p class="note">클릭해서 장착/해제. <b>실제 <code>backend/agents/schema.py</code> 의 필드다.</b></p>
+      <div id="blocks"></div>
+    </div>
+
+    <div class="sec">
+      <h2>라인 가동</h2>
+      <div class="util">
+        <button id="next" class="primary">다음 출력 ▶</button>
+        <button id="reset">처음으로</button>
+      </div>
+      <div class="util" style="margin-top:6px">
+        <button id="preset0">부탁만 (함정)</button>
+        <button id="presetAll">전부 장착</button>
+      </div>
+    </div>
+
+    <div id="score">
+      <div><span>흘려보낸 출력</span><b><span id="sDone">0</span> / <span id="sTotal">0</span></b></div>
+      <div><span>게이트가 막음</span><b class="g" id="sBlocked">0</b></div>
+      <div><span>하류로 샌 불량</span><b class="r" id="sLeak">0</b></div>
+      <div><span>예측 연속 정답</span><b id="sStreak">0</b></div>
+    </div>
+  </div>
+
+  <div id="stage">
+    <div id="cv"></div>
+    <div id="labels"></div>
+    <div id="hint">드래그 = 회전 · 휠 = 확대</div>
+
+    <div id="predict"><div class="card">
+      <div class="eyebrow">예측 후 공개 — 이 출력, 게이트를 통과할까</div>
+      <h3 id="pTitle">모델이 이렇게 뱉었다</h3>
+      <div class="json" id="pJson"></div>
+      <div class="ctx" id="pCtx"></div>
+      <div class="choices">
+        <button data-guess="blocked">거부된다</button>
+        <button data-guess="passed">통과한다</button>
+      </div>
+    </div></div>
+
+    <div id="result">
+      <div class="v" id="rV"></div>
+      <div class="g" id="rG"></div>
+      <div class="why" id="rWhy"></div>
+      <div class="dmg" id="rDmg" style="display:none"></div>
+      <button id="rClose">닫기</button>
+    </div>
+
+    <div id="toast"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+"use strict";
+
+// ═══════════════════════════════════════════════════════════
+// 1. 제약 블록 — 실제 schema.py 의 필드에서 그대로 가져왔다
+//    check(f) 가 null 을 반환하면 통과, 문자열이면 거부 사유.
+// ═══════════════════════════════════════════════════════════
+
+var BLOCKS = [
+  {
+    id: "desc", fake: true,
+    code: 'Field(description="...")',
+    d: "LLM 에게 보내는 설명. 파서가 아니라 <b>모델</b>이 읽는다.",
+    check: function () { return null; }          // ← 아무것도 막지 않는다
+  },
+  {
+    id: "sev",
+    code: 'severity: Literal["critical", ...]',
+    d: "다섯 값 중 하나만. 대소문자도 정확히.",
+    check: function (f) {
+      var ok = ["critical","high","medium","low","informational"];
+      if (typeof f.severity !== "string") return "severity 가 문자열이 아니다";
+      if (ok.indexOf(f.severity) < 0) return "severity=\"" + f.severity + "\" 는 허용 목록 밖";
+      return null;
+    }
+  },
+  {
+    id: "line",
+    code: "line: int = Field(ge=1)",
+    d: "파일에 0번 줄은 없다.",
+    check: function (f) {
+      if (typeof f.line !== "number") return "line 이 정수가 아니다";
+      if (f.line < 1) return "line=" + f.line + " — ge=1 위반";
+      return null;
+    }
+  },
+  {
+    id: "conf",
+    code: "confidence: float (ge=0.0, le=1.0)",
+    d: "확률이니 0~1 밖은 존재할 수 없다.",
+    check: function (f) {
+      if (typeof f.confidence !== "number") return "confidence 가 없거나 숫자가 아니다";
+      if (f.confidence < 0 || f.confidence > 1) return "confidence=" + f.confidence + " — 0~1 범위 밖";
+      return null;
+    }
+  },
+  {
+    id: "req",
+    code: "rationale: str   (필수)",
+    d: "필드 자체가 없으면 거부. <b>빈 문자열은 통과한다.</b>",
+    check: function (f) {
+      if (!("rationale" in f)) return "rationale 필드가 아예 없다";
+      return null;
+    }
+  },
+  {
+    id: "minlen",
+    code: "rationale: str = Field(min_length=1)",
+    d: "빈 문자열까지 막는다. <b>지금 schema.py 에는 없는 제약.</b>",
+    check: function (f) {
+      if (typeof f.rationale === "string" && f.rationale.trim().length === 0)
+        return "rationale 이 빈 문자열";
+      return null;
+    }
+  }
+];
+
+var active = {};   // id -> bool
+BLOCKS.forEach(function (b) { active[b.id] = false; });
+
+// ═══════════════════════════════════════════════════════════
+// 2. 모델 출력 샘플 — 앞쪽은 쉽고 뒤로 갈수록 교묘해진다
+//    bad: 이 출력이 왜 나쁜가 (게이트가 없을 때 하류에서 터지는 것)
+// ═══════════════════════════════════════════════════════════
+
+var SAMPLES = [
+  { f: { agent_type:"security", severity:"medium", category:"sql-injection",
+         file:"api/user.py", line:42, confidence:0.82,
+         rationale:"42번 줄에서 username 이 이스케이프 없이 쿼리에 연결됨" },
+    bad: null },
+
+  { f: { agent_type:"security", severity:"medium", category:"resource-leak",
+         file:"api/db.py", line:0, confidence:0.71,
+         rationale:"커넥션이 닫히지 않는 경로가 있음" },
+    bad: { by:"line", where:"GitHub 게시",
+      what:"GitHub 은 <b>0번 줄에 코멘트를 달 수 없다.</b> M8 에서 API 호출이 실패하고, " +
+           "그 지적은 조용히 사라진다. 모델이 “모르겠으니 0” 을 뱉은 것이다.",
+      note:"M0 에서 <b>실제로 나왔던 값</b>이다. 완료 판정을 그대로 통과했다." } },
+
+  { f: { agent_type:"quality", severity:"Critical", category:"data-loss",
+         file:"api/pay.py", line:12, confidence:0.93,
+         rationale:"트랜잭션 롤백 경로에서 결제 기록이 유실됨" },
+    bad: { by:"sev", where:"M8 게이트",
+      what:"게이트는 <code>severity == \"critical\"</code> 로 비교한다. " +
+           "<b>\"Critical\" 은 그 비교를 통과하지 못한다.</b> 사람에게 갈 지적이 " +
+           "자동 게시 경로로 흘러간다.",
+      note:"대문자 하나가 최악의 사고를 만든다. 그래서 자유 문자열이 아니라 Literal 이다." } },
+
+  { f: { agent_type:"testing", severity:"high", category:"missing-test",
+         file:"api/auth.py", line:23, confidence:1.5,
+         rationale:"토큰 만료 경로에 테스트가 없음" },
+    bad: { by:"conf", where:"M8 게이트",
+      what:"게이트는 <code>confidence >= 0.6</code> 이면 자동 게시한다. " +
+           "<b>1.5 는 무조건 통과한다.</b> 모델이 확신을 부풀리면 게이트가 무력해진다.",
+      note:"범위 제약은 스키마가, 임계값(0.6)은 게이트가. 둘을 섞으면 안 된다." } },
+
+  { f: { agent_type:"docs", severity:"urgent", category:"missing-docstring",
+         file:"api/util.py", line:8, confidence:0.44,
+         rationale:"공개 함수에 docstring 이 없음" },
+    bad: { by:"sev", where:"애그리게이터",
+      what:"<b>\"urgent\" 는 다섯 등급 어디에도 없다.</b> 애그리게이터가 심각도를 " +
+           "비교해 중복을 정리할 때 이 값의 순위를 매길 수 없다.",
+      note:"description 에 “다섯 중 하나” 라고 적어도 모델은 새 단어를 만들어낸다." } },
+
+  { f: { agent_type:"quality", severity:"low", category:"naming",
+         file:"api/util.py", line:5, confidence:0.38, rationale:"" },
+    bad: { by:"minlen", where:"사람 큐(HITL)",
+      what:"<b>빈 근거.</b> 애매한 지적이 사람에게 넘어갔는데 판단할 재료가 없다. " +
+           "사람은 코드를 처음부터 다시 읽어야 하고, 그러면 HITL 이 시간 낭비가 된다.",
+      note:"<code>str</code> 타입만으로는 이걸 못 막는다. <code>min_length=1</code> 이 " +
+           "따로 필요하고, <b>지금 우리 schema.py 에는 없다.</b>" } },
+
+  { f: { agent_type:"security", severity:"high", category:"xss",
+         file:"web/render.py", line:31, confidence:0.88 },
+    bad: { by:"req", where:"INV-3",
+      what:"<b>rationale 필드 자체가 없다.</b> “모든 finding 은 confidence 와 rationale 을 " +
+           "갖는다” 는 불변식이 깨진다.",
+      note:"필수 필드는 스키마가 강제한다 — OpenAI structured output 은 모든 필드를 required 로 만든다." } },
+
+  { f: { agent_type:"security", severity:"critical", category:"auth-bypass",
+         file:"api/auth.py", line:19, confidence:-0.2,
+         rationale:"관리자 검사가 우회 가능한 분기가 있음" },
+    bad: { by:"conf", where:"M8 게이트",
+      what:"<b>음수 확신도.</b> 게이트의 임계값 비교가 항상 거짓이 되어 " +
+           "critical 지적이 자동 게시도, 사람 큐도 아닌 어중간한 곳으로 간다.",
+      note:"ge=0.0 이 없으면 “확률” 이라는 말이 스키마 어디에도 안 적혀 있는 셈이다." } },
+
+  { f: { agent_type:"quality", severity:"informational", category:"style",
+         file:"api/user.py", line:7, confidence:0.31,
+         rationale:"변수명이 한 글자라 의도를 읽기 어려움" },
+    bad: null },
+
+  { f: { agent_type:"testing", severity:"medium", category:"flaky-test",
+         file:"tests/test_api.py", line:55, confidence:0.58,
+         rationale:"시간에 의존하는 단언이 있어 CI 에서 간헐 실패 가능" },
+    bad: null }
+];
+
+// ═══════════════════════════════════════════════════════════
+// 3. 검증 — 켜진 블록만으로 실제 판정한다 (하드코딩 없음)
+// ═══════════════════════════════════════════════════════════
+
+function validate(f) {
+  for (var i = 0; i < BLOCKS.length; i++) {
+    var b = BLOCKS[i];
+    if (!active[b.id]) continue;
+    var err = b.check(f);
+    if (err) return { ok: false, by: b.id, reason: err };
+  }
+  return { ok: true };
+}
+
+var state = { idx: 0, done: 0, blocked: 0, leak: 0, streak: 0, pending: null };
+
+// ═══════════════════════════════════════════════════════════
+// 4. 3D 무대 — 컨베이어 · 게이트 · 하류 3단계
+// ═══════════════════════════════════════════════════════════
+
+var wrap = document.getElementById("cv");
+var scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0f1620);
+scene.fog = new THREE.Fog(0x0f1620, 26, 58);
+
+var camera = new THREE.PerspectiveCamera(45, 1, 0.1, 220);
+var renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+wrap.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0x8fa8c4, 0.58));
+var sun = new THREE.DirectionalLight(0xffffff, 0.92);
+sun.position.set(-8, 17, 10); sun.castShadow = true;
+sun.shadow.mapSize.set(1024, 1024);
+sun.shadow.camera.left=-22; sun.shadow.camera.right=22;
+sun.shadow.camera.top=22; sun.shadow.camera.bottom=-22;
+scene.add(sun);
+
+var ground = new THREE.Mesh(new THREE.PlaneGeometry(90,90),
+  new THREE.MeshPhongMaterial({color:0x1b2838, flatShading:true, shininess:2}));
+ground.rotation.x = -Math.PI/2; ground.position.y = -0.02; ground.receiveShadow = true;
+scene.add(ground);
+var grid = new THREE.GridHelper(90,45,0x2c3e55,0x223146);
+grid.material.opacity=.45; grid.material.transparent=true; scene.add(grid);
+
+var M = {
+  belt:  new THREE.MeshPhongMaterial({color:0x2b3f58, flatShading:true, shininess:2}),
+  frame: new THREE.MeshPhongMaterial({color:0x46688c, flatShading:true, shininess:2}),
+  slotOff:new THREE.MeshPhongMaterial({color:0x243547, flatShading:true, shininess:1}),
+  slotOn: new THREE.MeshPhongMaterial({color:0x3ecf8e, flatShading:true, shininess:5}),
+  slotFake:new THREE.MeshPhongMaterial({color:0x7c6bb0, flatShading:true, shininess:5}),
+  good:  new THREE.MeshPhongMaterial({color:0x3ecf8e, flatShading:true, shininess:5}),
+  bad:   new THREE.MeshPhongMaterial({color:0xff6b6b, flatShading:true, shininess:5}),
+  bldg:  new THREE.MeshPhongMaterial({color:0x3a5678, flatShading:true, shininess:2}),
+  roof:  new THREE.MeshPhongMaterial({color:0x5aa9ff, flatShading:true, shininess:3}),
+  hit:   new THREE.MeshPhongMaterial({color:0xff6b6b, flatShading:true, shininess:6})
+};
+
+var X_IN = -15, X_GATE = -4, X_END = 15;
+
+// 컨베이어
+var belt = new THREE.Mesh(new THREE.BoxGeometry(X_END - X_IN + 4, 0.4, 2.4), M.belt);
+belt.position.set((X_IN + X_END)/2, 0.2, 0); belt.receiveShadow = true;
+scene.add(belt);
+for (var bx = X_IN - 1; bx <= X_END + 1; bx += 1.6) {
+  var roller = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.46, 2.5), M.frame);
+  roller.position.set(bx, 0.23, 0); scene.add(roller);
+}
+
+// 게이트 아치
+var gate = new THREE.Group();
+gate.position.set(X_GATE, 0, 0);
+[-1.75, 1.75].forEach(function (z) {
+  var post = new THREE.Mesh(new THREE.BoxGeometry(0.5, 4.2, 0.5), M.frame);
+  post.position.set(0, 2.1, z); post.castShadow = true; gate.add(post);
+});
+var lintel = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.5, 4), M.frame);
+lintel.position.set(0, 4.35, 0); lintel.castShadow = true; gate.add(lintel);
+
+// 슬롯 6개 (블록 장착 자리)
+var slotMeshes = {};
+BLOCKS.forEach(function (b, i) {
+  var s = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.5, 1.0), M.slotOff);
+  var col = i % 2, row = Math.floor(i / 2);
+  s.position.set(0, 1.05 + row * 0.95, (col === 0 ? -1.05 : 1.05));
+  s.castShadow = true;
+  gate.add(s);
+  slotMeshes[b.id] = s;
+});
+scene.add(gate);
+
+// 하류 건물 3개
+var STAGES = [
+  { id:"애그리게이터", x: 2.5 },
+  { id:"M8 게이트",   x: 8 },
+  { id:"GitHub 게시", x: 13.5 }
+];
+var stageMeshes = [];
+STAGES.forEach(function (st) {
+  var g = new THREE.Group();
+  g.position.set(st.x, 0, -4.2);
+  var base = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.35, 3.4), M.frame);
+  base.position.y = 0.17; base.receiveShadow = true; g.add(base);
+  var body = new THREE.Mesh(new THREE.BoxGeometry(2.3, 1.7, 2.3), M.bldg);
+  body.position.y = 1.2; body.castShadow = true; g.add(body);
+  var roof = new THREE.Mesh(new THREE.ConeGeometry(1.8, 1.05, 4), M.roof);
+  roof.position.y = 2.57; roof.rotation.y = Math.PI/4; roof.castShadow = true; g.add(roof);
+  scene.add(g);
+  stageMeshes.push({ group:g, body:body, roof:roof, hitT:0 });
+});
+
+// 거부 통
+var bin = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.2, 2.6),
+  new THREE.MeshPhongMaterial({color:0x5a2a2a, flatShading:true, shininess:2}));
+bin.position.set(X_GATE, 0.6, 4.6); bin.castShadow = true; scene.add(bin);
+
+// 이동하는 아이템
+var item = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.95, 0.95), M.good);
+item.position.set(X_IN, 0.88, 0); item.castShadow = true; item.visible = false;
+scene.add(item);
+
+// ── 라벨 ──
+var labelsEl = document.getElementById("labels");
+function mkLab(cls){ var e=document.createElement("div"); e.className="lab"+(cls?" "+cls:"");
+  labelsEl.appendChild(e); return e; }
+var labGate = mkLab(), labIn = mkLab("dim"), labBin = mkLab("dim");
+var labStages = STAGES.map(function(){ return mkLab("dim"); });
+
+function place(el, x, y, z) {
+  var v = new THREE.Vector3(x,y,z).project(camera);
+  var w = wrap.clientWidth, h = wrap.clientHeight;
+  el.style.left = ((v.x*0.5+0.5)*w)+"px";
+  el.style.top  = ((-v.y*0.5+0.5)*h)+"px";
+  el.style.display = v.z > 1 ? "none" : "block";
+}
+function updateLabels() {
+  var n = BLOCKS.filter(function(b){ return active[b.id]; }).length;
+  var real = BLOCKS.filter(function(b){ return active[b.id] && !b.fake; }).length;
+  labGate.innerHTML = "스키마 게이트 &nbsp;<b>" + real + "</b>/5 실제 제약" +
+                      (active.desc ? " &nbsp;<span style='color:#7c6bb0'>+ description(부탁)</span>" : "");
+  labGate.className = "lab" + (real === 0 ? " dim" : "");
+  place(labGate, X_GATE, 5.3, 0);
+
+  labIn.textContent = "LLM 출력";
+  place(labIn, X_IN, 1.9, 0);
+  labBin.textContent = "거부됨 " + state.blocked;
+  place(labBin, X_GATE, 1.9, 4.6);
+
+  STAGES.forEach(function (st, i) {
+    var sm = stageMeshes[i];
+    labStages[i].className = "lab" + (sm.hitT > 0 ? " hit" : " dim");
+    labStages[i].textContent = st.id;
+    place(labStages[i], st.x, 3.5, -4.2);
+  });
+}
+
+// ── 카메라 ──
+var cam = { az: -0.30, el: 0.52, r: 26, tx: 0, ty: 1.4, tz: 0 };
+function applyCam(){
+  camera.position.set(
+    cam.tx + cam.r*Math.cos(cam.el)*Math.sin(cam.az),
+    cam.ty + cam.r*Math.sin(cam.el),
+    cam.tz + cam.r*Math.cos(cam.el)*Math.cos(cam.az));
+  camera.lookAt(cam.tx, cam.ty, cam.tz);
+}
+var drag=false,lx=0,ly=0;
+renderer.domElement.addEventListener("pointerdown",function(e){drag=true;lx=e.clientX;ly=e.clientY;
+  renderer.domElement.setPointerCapture(e.pointerId);});
+renderer.domElement.addEventListener("pointermove",function(e){ if(!drag)return;
+  cam.az -= (e.clientX-lx)*0.006; cam.el += (e.clientY-ly)*0.005;
+  cam.el = Math.max(0.14, Math.min(1.35, cam.el)); lx=e.clientX; ly=e.clientY; applyCam(); });
+renderer.domElement.addEventListener("pointerup",function(e){drag=false;
+  try{renderer.domElement.releasePointerCapture(e.pointerId);}catch(err){}});
+renderer.domElement.addEventListener("wheel",function(e){ e.preventDefault();
+  cam.r = Math.max(13, Math.min(44, cam.r + e.deltaY*0.017)); applyCam(); },{passive:false});
+
+function resize(){
+  var w=wrap.clientWidth,h=wrap.clientHeight;
+  renderer.setSize(w,h); renderer.setPixelRatio(Math.min(2,window.devicePixelRatio));
+  camera.aspect=w/h; camera.updateProjectionMatrix();
+}
+window.addEventListener("resize",resize);
+
+// ═══════════════════════════════════════════════════════════
+// 5. 아이템 이동 애니메이션
+// ═══════════════════════════════════════════════════════════
+
+var run = null;   // { phase, t, verdict, sample }
+
+function startRun(sample, verdict) {
+  item.visible = true;
+  item.position.set(X_IN, 0.88, 0);
+  item.rotation.set(0,0,0);
+  item.material = verdict.ok ? M.good : M.bad;
+  item.scale.set(1,1,1);
+  run = { phase:"toGate", t:0, verdict:verdict, sample:sample, hitStage:-1 };
+}
+
+function tick() {
+  requestAnimationFrame(tick);
+  var now = performance.now();
+  if (!tick.prev) tick.prev = now;
+  var dt = Math.min(50, now - tick.prev); tick.prev = now;
+
+  if (run) {
+    run.t += dt;
+    if (run.phase === "toGate") {
+      var p = Math.min(1, run.t / 1100);
+      item.position.x = X_IN + (X_GATE - X_IN) * p;
+      item.rotation.z = -p * 6;
+      if (p >= 1) {
+        run.t = 0;
+        run.phase = run.verdict.ok ? "downstream" : "reject";
+        if (!run.verdict.ok) shakeSlot(run.verdict.by);
+      }
+    } else if (run.phase === "reject") {
+      var q = Math.min(1, run.t / 700);
+      var e = 1 - Math.pow(1 - q, 2);
+      item.position.z = e * 4.6;
+      item.position.y = 0.88 + Math.sin(q * Math.PI) * 2.2 - e * 0.4;
+      item.rotation.x = q * 7;
+      if (q >= 1) { item.visible = false; run = null; }
+    } else if (run.phase === "downstream") {
+      var r = Math.min(1, run.t / 1500);
+      item.position.x = X_GATE + (X_END - X_GATE) * r;
+      item.rotation.z = -(1 + r * 5);
+      // 하류 건물 타격
+      if (run.sample.bad) {
+        var target = STAGES.findIndex(function (s) {
+          return s.id.indexOf(run.sample.bad.where.slice(0,3)) >= 0;
+        });
+        if (target < 0) target = 1;
+        if (run.hitStage < 0 && item.position.x >= STAGES[target].x) {
+          run.hitStage = target;
+          stageMeshes[target].hitT = 900;
+        }
+      }
+      if (r >= 1) { item.visible = false; run = null; }
+    }
+  }
+
+  stageMeshes.forEach(function (sm) {
+    if (sm.hitT > 0) {
+      sm.hitT -= dt;
+      sm.body.material = M.hit;
+      sm.roof.material = M.hit;
+      sm.group.position.y = Math.sin(now * 0.03) * 0.09;
+      if (sm.hitT <= 0) { sm.body.material = M.bldg; sm.roof.material = M.roof; sm.group.position.y = 0; }
+    }
+  });
+
+  if (slotShake.t > 0) {
+    slotShake.t -= dt;
+    var m = slotMeshes[slotShake.id];
+    if (m) m.position.x = Math.sin(now * 0.06) * 0.16;
+    if (slotShake.t <= 0 && m) m.position.x = 0;
+  }
+
+  updateLabels();
+  renderer.render(scene, camera);
+}
+var slotShake = { t:0, id:null };
+function shakeSlot(id){ slotShake.t = 620; slotShake.id = id; }
+
+// ═══════════════════════════════════════════════════════════
+// 6. UI
+// ═══════════════════════════════════════════════════════════
+
+var elToast = document.getElementById("toast"), tTimer=null;
+function toast(m){ elToast.innerHTML=m; elToast.classList.add("show");
+  clearTimeout(tTimer); tTimer=setTimeout(function(){elToast.classList.remove("show");},3400); }
+
+var blocksEl = document.getElementById("blocks");
+BLOCKS.forEach(function (b) {
+  var el = document.createElement("div");
+  el.className = "blk" + (b.fake ? " fake" : "");
+  el.dataset.id = b.id;
+  el.innerHTML = '<div class="box">✓</div><div><code>' + b.code + '</code>' +
+                 '<div class="d">' + b.d + '</div></div>';
+  el.addEventListener("click", function () {
+    active[b.id] = !active[b.id];
+    renderBlocks();
+    if (b.id === "desc" && active.desc)
+      toast("description 을 끼웠다. <b>하지만 이건 파서가 아니라 모델이 읽는 글이다</b> — 아무것도 거부하지 않는다.");
+  });
+  blocksEl.appendChild(el);
+});
+
+function renderBlocks() {
+  document.querySelectorAll(".blk").forEach(function (el) {
+    var b = BLOCKS.filter(function(x){return x.id===el.dataset.id;})[0];
+    el.classList.toggle("on", !!active[b.id]);
+    var m = slotMeshes[b.id];
+    if (m) m.material = active[b.id] ? (b.fake ? M.slotFake : M.slotOn) : M.slotOff;
+  });
+  document.getElementById("sDone").textContent = state.done;
+  document.getElementById("sTotal").textContent = SAMPLES.length;
+  document.getElementById("sBlocked").textContent = state.blocked;
+  document.getElementById("sLeak").textContent = state.leak;
+  document.getElementById("sStreak").textContent = state.streak;
+  document.getElementById("next").disabled = state.idx >= SAMPLES.length;
+  document.getElementById("next").textContent =
+    state.idx >= SAMPLES.length ? "출력 소진 — 리셋" : "다음 출력 ▶";
+}
+
+function fmtJson(f) {
+  var keys = ["agent_type","severity","category","file","line","confidence","rationale"];
+  var lines = keys.filter(function(k){ return k in f; }).map(function (k) {
+    var v = f[k];
+    var vs = typeof v === "string" ? '<span class="s">"' + v + '"</span>'
+                                   : '<span class="n">' + v + '</span>';
+    return '  <span class="k">"' + k + '"</span>: ' + vs;
+  });
+  var missing = keys.filter(function(k){ return !(k in f); });
+  var out = "{\n" + lines.join(",\n") + "\n}";
+  if (missing.length) out += "\n\n// 없는 필드: " + missing.join(", ");
+  return out;
+}
+
+var elPredict = document.getElementById("predict");
+document.getElementById("next").addEventListener("click", function () {
+  if (state.idx >= SAMPLES.length) { doReset(); return; }
+  var s = SAMPLES[state.idx];
+  state.pending = s;
+  document.getElementById("pJson").innerHTML = fmtJson(s.f);
+  var on = BLOCKS.filter(function(b){ return active[b.id]; });
+  var real = on.filter(function(b){ return !b.fake; });
+  document.getElementById("pCtx").innerHTML =
+    "장착된 블록: <b>" + (on.length ? on.length + "개</b>" : "없음</b>") +
+    (on.length && real.length !== on.length ? " (그중 실제 제약 <b>" + real.length + "개</b>)" : "") +
+    " · 출력 " + (state.idx+1) + "/" + SAMPLES.length;
+  elPredict.classList.add("show");
+});
+
+document.querySelectorAll(".choices button").forEach(function (b) {
+  b.addEventListener("click", function () {
+    elPredict.classList.remove("show");
+    fire(state.pending, b.dataset.guess);
+  });
+});
+
+var elResult = document.getElementById("result");
+document.getElementById("rClose").addEventListener("click", function(){ elResult.classList.remove("show"); });
+
+function fire(sample, guess) {
+  var v = validate(sample.f);
+  var correct = (guess === "blocked") === !v.ok;
+  if (correct) state.streak += 1; else state.streak = 0;
+
+  state.idx += 1; state.done += 1;
+  if (!v.ok) state.blocked += 1;
+  else if (sample.bad) state.leak += 1;
+
+  startRun(sample, v);
+
+  document.getElementById("rV").textContent = v.ok ? "▶ 통과했다" : "⛔ 게이트가 막았다";
+  document.getElementById("rV").className = "v " + (v.ok ? (sample.bad ? "bad" : "ok") : "ok");
+  document.getElementById("rG").textContent =
+    (correct ? "✔ 예측 적중" : "✘ 예측이 틀렸다") + " · 연속 " + state.streak;
+
+  var why;
+  if (!v.ok) {
+    var blk = BLOCKS.filter(function(b){return b.id===v.by;})[0];
+    why = "<code>" + blk.code + "</code> 가 거부했다.<br><em>" + v.reason + "</em>" +
+          "<br><br>파서가 값을 <b>보고 판단해서</b> 튕겼다. 모델에게 부탁한 게 아니다.";
+  } else if (sample.bad) {
+    var need = BLOCKS.filter(function(b){return b.id===sample.bad.by;})[0];
+    why = "게이트에 <code>" + need.code + "</code> 가 없어서 <b>그대로 흘러갔다.</b>" +
+          (active.desc ? "<br><br><em>description 은 끼워져 있었다.</em> 하지만 그건 " +
+            "모델에게 보내는 글이지 검사기가 아니다 — 값을 하나도 안 본다." : "");
+  } else {
+    why = "정상 출력이다. 켜진 제약을 전부 만족한다.";
+  }
+  document.getElementById("rWhy").innerHTML = why;
+
+  var dmgEl = document.getElementById("rDmg");
+  if (v.ok && sample.bad) {
+    dmgEl.style.display = "block";
+    dmgEl.innerHTML = "<b>하류 " + sample.bad.where + " 에서 터진다</b><br>" +
+                      sample.bad.what + "<br><br>" + sample.bad.note;
+  } else dmgEl.style.display = "none";
+
+  elResult.classList.add("show");
+  renderBlocks();
+
+  if (v.ok && sample.bad) toast("불량이 <b>하류로 샜다</b> — " + sample.bad.where + " 가 맞았다");
+}
+
+function doReset() {
+  state.idx=0; state.done=0; state.blocked=0; state.leak=0; state.streak=0;
+  run=null; item.visible=false;
+  stageMeshes.forEach(function(sm){ sm.hitT=0; sm.body.material=M.bldg; sm.roof.material=M.roof;
+    sm.group.position.y=0; });
+  renderBlocks();
+  toast("처음 상태로 되돌렸다");
+}
+document.getElementById("reset").addEventListener("click", doReset);
+
+document.getElementById("preset0").addEventListener("click", function () {
+  BLOCKS.forEach(function(b){ active[b.id] = (b.id === "desc"); });
+  doReset();
+  toast("<b>description 만</b> 끼웠다. 프롬프트로 “0~1 사이로 주세요” 라고 부탁한 상태다. 이제 라인을 돌려보자.");
+});
+document.getElementById("presetAll").addEventListener("click", function () {
+  BLOCKS.forEach(function(b){ active[b.id] = true; });
+  doReset();
+  toast("전부 장착했다. <b>min_length 는 지금 실제 schema.py 에는 없는 제약</b>이라는 걸 기억할 것.");
+});
+
+resize(); applyCam(); renderBlocks(); tick();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "tiger": {
+      "type": "stdio",
+      "command": "/opt/homebrew/bin/tiger",
+      "args": ["mcp", "start"],
+      "env": {}
+    }
+  }
+}

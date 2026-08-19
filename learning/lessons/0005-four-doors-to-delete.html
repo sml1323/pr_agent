@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 05 — 삭제로 가는 문은 네 개다</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Lesson 05 · M2 · migrations/003_immutable.sql</p>
+<h1>삭제로 가는<br>문은 네 개다</h1>
+<p class="subtitle">감사 로그를 "못 지우게" 만들려면, 먼저 지울 수 있는 길을 다 세어야 한다.</p>
+
+<p class="callout">
+<strong>여기서 땅이 바뀐다.</strong> <a href="0001-schema-not-prompt.html">01</a>~<a href="0004-same-delivery-twice.html">04</a>는
+파이썬·HTTP·LLM API 얘기였다. 05부터는 <strong>데이터베이스</strong>다.
+SQL을 몰라도 따라올 수 있게 아래 세 절을 먼저 깔았다. 이미 아는 내용이면 건너뛰어도 된다.
+</p>
+
+<h2>0-a. 우선 <code>agent_events</code>가 뭔가</h2>
+
+<p>
+<strong>시스템에서 일어난 모든 일을 한 줄씩 적는 공책</strong>이다.
+PR 하나가 들어오면 이런 일들이 순서대로 일어나고, <strong>각각이 한 줄씩</strong> 쌓인다.
+</p>
+
+<div class="table-scroll">
+<table>
+  <tr><th>ts</th><th>agent</th><th>event_type</th><th>pr_id</th><th>cost_usd</th></tr>
+  <tr><td>10:00:01</td><td>webhook</td><td>received</td><td>42</td><td>—</td></tr>
+  <tr><td>10:00:01</td><td>queue</td><td>enqueued</td><td>42</td><td>—</td></tr>
+  <tr><td>10:00:03</td><td>security</td><td>llm_call</td><td>42</td><td>0.004</td></tr>
+  <tr><td>10:00:07</td><td>gate</td><td>auto_posted</td><td>42</td><td>—</td></tr>
+</table>
+</div>
+
+<p>
+이 표가 있어야 답할 수 있는 질문들이다 — <em>"이 PR 리뷰에 얼마 들었나"</em>,
+<em>"어제 왜 비쌌나"</em>, <em>"이 자동 게시된 코멘트, 무슨 근거로 통과됐나"</em>.
+전부 <strong>나중에 따져 묻는</strong> 질문이다.
+</p>
+
+<h2>0-b. 그래서 왜 "못 지우게" 하나</h2>
+
+<p>
+위 질문들이 전부 사후 추궁이기 때문이다. 사고가 났을 때 이 공책을 보고 따지는데,
+<strong>공책을 고칠 수 있으면</strong> 사고 낸 사람이 조용히 지울 수 있다.
+</p>
+
+<p class="callout">
+<strong>고칠 수 있는 감사 로그는 감사 로그가 아니다.</strong><br>
+그래서 이 프로젝트의 INV-4는 <code>agent_events</code>를 <strong>수정·삭제 불가</strong>로 못 박는다.
+</p>
+
+<p>
+그리고 <strong>코드로 막지 않고 DB로 막는다.</strong> 코드 규칙("여기서는 지우지 마세요")은
+누군가 까먹거나 우회한다. DB가 거부하면 <strong>누가 무슨 도구로 접속하든 물리적으로 불가능</strong>하다.
+</p>
+
+<h2>0-c. SQL에서 데이터를 없애는 방법 — 셋이 다르다</h2>
+
+<p>이 셋의 차이가 이 레슨 전체를 만든다. 겉보기엔 비슷한데 <strong>DB 안에서 완전히 다른 일</strong>을 한다.</p>
+
+<pre><code>UPDATE agent_events SET cost_usd = 0    <span class="c-good">줄의 값을 고친다</span>
+DELETE FROM agent_events               <span class="c-good">줄을 하나씩 지운다</span>
+TRUNCATE agent_events                  <span class="c-bad">표를 통째로 비운다  ← 별개의 명령</span></code></pre>
+
+<p>
+<code>UPDATE</code>와 <code>DELETE</code>는 <strong>줄(row) 단위</strong>다 — "이 줄을 고쳐라 / 이 줄을 없애라".
+<code>TRUNCATE</code>는 줄을 하나도 보지 않는다. <strong>"표를 비워라"</strong> 한 마디로 끝낸다.
+이 차이가 뒤에서 함정이 된다.
+</p>
+
+<h2>0-d. 트리거 — DB에 심는 감시자</h2>
+
+<p>
+<strong>트리거(trigger)</strong>는 "이 표에 무슨 일이 일어나려 하면 이 함수를 먼저 실행해라"라는 규칙이다.
+DB 안에 심어두면 <strong>누가 접속하든</strong> 발동한다.
+</p>
+
+<pre><code>CREATE TRIGGER 이름
+    BEFORE DELETE ON agent_events   <span class="c-good">← 지우려 하면, 지우기 전에</span>
+    FOR EACH ROW                    <span class="c-good">← 줄마다</span>
+    EXECUTE FUNCTION 거부함수();     <span class="c-good">← 이걸 실행 (예외를 던진다)</span></code></pre>
+
+<p>
+거부 함수가 예외를 던지면 그 명령 전체가 취소된다. 이게 INV-4를 <strong>DB 레벨에서 강제</strong>하는 방법이다.
+</p>
+
+<h2>이 레슨이 주는 것</h2>
+
+<p>
+여기까지가 준비물이다. 이제 진짜 질문 — <strong>트리거를 걸면 끝인가?</strong><br>
+INV-4를 DB에 새기려면 <strong>지우는 방법이 몇 가지인지</strong>부터 세어야 한다.
+끝나면 왜 트리거 하나로는 부족한지, 그리고 <strong>왜 방어가 두 겹(트리거 + 롤)이어야 하는지</strong>를
+"그렇게 하라고 적혀 있어서"가 아니라 <strong>구조 때문에</strong> 설명할 수 있게 된다.
+</p>
+
+<h2>먼저 — 테이블이 실은 하나가 아니다</h2>
+
+<p>
+<code>agent_events</code>는 <strong>하이퍼테이블(hypertable)</strong>로 만든다.
+겉보기엔 보통 테이블인데, 안에서는 시간 구간별로 <strong>여러 개의 실제 테이블</strong>로 쪼개져 있다.
+그 조각 하나를 <strong>chunk</strong>라 부른다.
+</p>
+
+<p class="callout">
+"A chunk is a horizontal partition of a hypertable: <strong>it is a table</strong> that holds rows for a
+specific time range... you always insert and query against the hypertable name;
+<strong>the system creates and uses chunks behind the scenes.</strong>"<br>
+— <a href="https://www.tigerdata.com/docs/learn/chunks/understanding-chunks">Tiger Docs, Understand chunks</a>
+</p>
+
+<pre><code>agent_events            <span class="c-good">← 내가 쓰는 이름 (논리)</span>
+├── _hyper_1_1_chunk    <span class="c-good">← 7/01~07 데이터 (실제 테이블)</span>
+├── _hyper_1_2_chunk    <span class="c-good">← 7/08~14 데이터 (실제 테이블)</span>
+└── _hyper_1_3_chunk    <span class="c-good">← 7/15~21 데이터 (실제 테이블)</span></code></pre>
+
+<p>
+왜 이렇게 하냐 — 서랍장 비유가 맞다. 옷을 한 통에 다 넣으면 뭘 찾든 통째로 뒤져야 한다.
+<strong>"지난주 것"만 서랍 하나에 모아두면 그 서랍만 열면 된다.</strong>
+시간순 데이터는 질문이 거의 항상 "언제부터 언제까지"라서, 이 구조가 크게 이긴다.
+</p>
+
+<p>
+이 구조를 지금 짚는 이유는 성능이 아니다. <strong>내가 트리거를 거는 대상과
+실제로 데이터가 들어 있는 테이블이 다르기 때문</strong>이다. 여기서 함정이 나온다.
+</p>
+
+<h2>좋은 소식 — 트리거는 chunk까지 따라간다</h2>
+
+<p>
+하이퍼테이블에 트리거를 걸면 chunk에도 자동으로 붙는다. 직접 확인된 사실이다:
+</p>
+
+<p class="callout">
+"When you create, alter, drop, enable, or disable a trigger on a hypertable...
+<strong>TimescaleDB propagates the change to every chunk.</strong>"<br>
+— <a href="https://www.tigerdata.com/docs/build/performance-optimization/automate-tasks-with-triggers">Tiger Docs, Automate tasks with triggers</a>
+</p>
+
+<p>
+그리고 하나 더 — 하이퍼테이블은 <strong>상속(inheritance)이 아니다.</strong>
+문서가 명시적으로 "Inheritance is <strong>not supported</strong> for hypertables"라고 못 박는다.
+전파는 상속 덕분이 아니라 TimescaleDB가 <strong>직접 복사해 붙이는</strong> 동작이다.
+이 차이가 뒤에서 한 번 더 나온다.
+</p>
+
+<h2>문 ①②: UPDATE 와 DELETE</h2>
+
+<p>
+이 둘은 <strong>row 단위(row-level)</strong> 동작이다. "이 줄을 바꿔라 / 이 줄을 없애라".
+그래서 <code>BEFORE UPDATE ... FOR EACH ROW</code>와 <code>BEFORE DELETE ... FOR EACH ROW</code>
+트리거로 잡아서 예외를 던지면 막힌다. 여기까지가 대부분의 사람이 하는 일이고,
+<strong>여기서 멈추면 뚫린다.</strong>
+</p>
+
+<h2>문 ③: TRUNCATE — DELETE 의 묶음이 아니다</h2>
+
+<p>
+<code>TRUNCATE agent_events</code>는 테이블을 통째로 비운다.
+직관적으로는 "DELETE를 전부 하는 것"처럼 보이는데, Postgres에서는 <strong>완전히 다른 명령</strong>이다.
+</p>
+
+<p class="callout">
+"<code>TRUNCATE</code> <strong>will not fire any <code>ON DELETE</code> triggers</strong>
+that might exist for the tables. But it will fire <code>ON TRUNCATE</code> triggers."<br>
+— <a href="https://www.postgresql.org/docs/17/sql-truncate.html">PostgreSQL Docs, TRUNCATE</a>
+</p>
+
+<p>
+즉 문 ②를 아무리 잘 막아도 문 ③은 그냥 열려 있다.
+별도로 <code>BEFORE TRUNCATE</code> 트리거를 걸어야 한다. 그리고 여기에 제약이 하나 붙는다:
+</p>
+
+<p class="callout">
+"Triggers on <code>TRUNCATE</code> may only be defined at <strong>statement level, not per-row.</strong>"<br>
+— <a href="https://www.postgresql.org/docs/17/sql-createtrigger.html">PostgreSQL Docs, CREATE TRIGGER</a>
+</p>
+
+<p>
+당연하다. TRUNCATE는 "줄"을 보지 않으니 <code>FOR EACH ROW</code>가 성립하지 않는다.
+<code>FOR EACH STATEMENT</code>로 써야 한다. <strong>문마다 잠그는 방식이 다르다</strong>는 게 요점이다.
+</p>
+
+<div class="quiz" data-answer="3">
+  <p class="quiz-q">DELETE 트리거만 걸어두고 TRUNCATE 를 시도하면?</p>
+  <ol class="quiz-opts">
+    <li data-fb="TRUNCATE 는 ON DELETE 트리거를 발동시키지 않는다고 문서가 명시한다.">DELETE 트리거가 대신 발동해서 막힌다</li>
+    <li data-fb="하이퍼테이블이라 chunk 로 전파는 되지만, 전파돼도 발동 자체를 안 한다.">chunk 로 전파되지 않아서 실패한다</li>
+    <li data-fb="ON DELETE 는 발동하지 않는다. BEFORE TRUNCATE 를 따로 걸어야 막힌다.">아무 트리거도 안 걸리고 통째로 비워진다</li>
+    <li data-fb="권한이 있으면 그냥 성공한다. 권한은 별개의 방어층이고 문 ④에서 다룬다.">권한 부족으로 자동 거부된다</li>
+  </ol>
+</div>
+
+<h2>문 ④: drop_chunks — 트리거가 원리적으로 못 막는 문</h2>
+
+<p>
+여기가 이 레슨의 핵심이다. TimescaleDB의 표준 데이터 정리 방법은 row를 지우는 게 아니다:
+</p>
+
+<p class="callout">
+"TimescaleDB data retention works on <strong>chunks, not on rows.</strong>
+Deleting data row-by-row, for example, with the PostgreSQL <code>DELETE</code> command, can be slow.
+But dropping data by the chunk is faster, <strong>because it deletes an entire file from disk.</strong>"<br>
+— <a href="https://www.tigerdata.com/docs/learn/data-lifecycle/data-retention/about-data-retention">Tiger Docs, Understand data retention</a>
+</p>
+
+<p>
+<strong>파일을 지운다.</strong> 줄을 지우는 게 아니다.
+DML(데이터를 조작하는 명령: INSERT/UPDATE/DELETE) 트리거는 "줄에 무슨 일이 일어날 때" 발동한다.
+그런데 <code>drop_chunks()</code>는 chunk 테이블 자체를 <code>DROP</code> 하는
+<strong>DDL(구조를 바꾸는 명령)</strong>이다. 줄에는 아무 일도 일어나지 않는다 — 서랍이 사라진다.
+</p>
+
+<pre><code>DELETE FROM agent_events   <span class="c-good">→ 줄을 지운다   → 트리거 발동 ✓</span>
+TRUNCATE agent_events      <span class="c-bad">→ 표를 비운다   → ON DELETE 안 발동 (별도 트리거 필요)</span>
+SELECT drop_chunks(...)    <span class="c-bad">→ 파일을 지운다 → DML 트리거 발동 자체가 성립 안 함</span></code></pre>
+
+<p class="callout">
+<strong>그래서 방어가 두 겹인 이유가 여기서 나온다.</strong><br><br>
+문 ④는 트리거로 못 막는다. "깜빡했다"가 아니라 <strong>트리거가 도달할 수 없는 층</strong>이다.
+남는 방법은 하나 — <strong>애초에 그 함수를 부를 권한을 주지 않는 것</strong>(RBAC).<br><br>
+정리하면: <strong>트리거는 "무엇을 하려 했나"를 막고, 롤은 "그럴 자격이 없다"를 막는다.</strong>
+두 층이 막는 대상이 다르므로, 하나로는 원리적으로 부족하다.
+</p>
+
+<h2>미확인 — CREATE RULE</h2>
+
+<p class="callout">
+프로젝트 문서에 "<code>CREATE RULE</code>로 막으려 하면 실패한다 — RULE은 쿼리 재작성 단계에서 돌고
+하이퍼테이블은 재작성 규칙을 지원하지 않는다"고 적혀 있다 [03:00:45].
+<strong>1차 출처에서 이 문장을 아직 찾지 못했다.</strong>
+확인된 건 "하이퍼테이블은 상속을 지원하지 않는다"까지다.<br><br>
+<strong>추측을 사실처럼 쓰지 않는다.</strong> 어차피 트리거로 갈 거라 실무엔 영향이 없지만,
+근거의 등급은 구분해서 기록한다. <a href="0004-same-delivery-twice.html">Lesson 04</a>의
+<code>guid</code> 미확인과 같은 취급이다.
+</p>
+
+<div class="quiz" data-answer="2">
+  <p class="quiz-q">트리거와 롤(RBAC)을 <em>둘 다</em> 걸어야 하는 근본 이유는?</p>
+  <ol class="quiz-opts">
+    <li data-fb="트리거가 실수로 빠질 걱정은 부차적이다. 원리적으로 못 막는 문이 있는 게 핵심이다.">트리거를 깜빡 빼먹을 수 있어서다</li>
+    <li data-fb="drop_chunks 는 파일을 지우는 DDL 이라 DML 트리거의 사정거리 밖에 있다.">트리거가 닿지 못하는 층이 있어서다</li>
+    <li data-fb="속도는 이 결정과 무관하다. 트리거 비용은 INSERT 경로에만 붙는다.">트리거만 쓰면 쓰기가 느려져서다</li>
+    <li data-fb="전파는 문서가 보장한다. 전파는 되지만 발동 자체가 안 되는 경우가 문제다.">트리거가 chunk 로 전파되지 않아서다</li>
+  </ol>
+</div>
+
+<h2>그리고 이게 아까 못 정한 결정으로 이어진다</h2>
+
+<p>
+문 ④를 잠그면 <strong>테이블을 줄일 합법적인 수단이 사라진다.</strong>
+<code>agent_events</code>는 영원히 자란다. 그래서 "payload에 무엇을 넣을 것인가"가
+단순한 스키마 취향이 아니라 <strong>되돌릴 수 없는 용량 결정</strong>이 된다.
+증거 스니펫 원문을 통째로 넣기로 하면, 그 선택은 INV-4 때문에 영구적이다.
+</p>
+
+<p>
+<strong>지금 정하지 않는다.</strong> 이 결정은 <code>record_event()</code>를 실제로 쓰는 자리에서 한다.
+지금 아는 것으로 충분하다 — <strong>왜 그게 되돌릴 수 없는 결정인지</strong>를 알게 된 것.
+</p>
+
+<div class="footer">
+  <h3>1차 출처</h3>
+  <p>
+    <a href="https://www.tigerdata.com/docs/learn/chunks/understanding-chunks">Tiger Docs — Understand chunks</a><br>
+    <strong>먼저 읽을 것.</strong> 짧다. 하이퍼테이블과 chunk 의 관계, 그리고
+    "상속이 아니다"라는 주의문까지 여기 다 있다.
+  </p>
+  <p>
+    <a href="https://www.postgresql.org/docs/17/sql-createtrigger.html">PostgreSQL — CREATE TRIGGER</a><br>
+    row-level 과 statement-level 의 구분, TRUNCATE 트리거의 제약. 표로 정리된 부분만 봐도 된다.
+  </p>
+  <p>
+    <a href="https://www.tigerdata.com/docs/learn/data-lifecycle/data-retention/about-data-retention">Tiger Docs — Understand data retention</a><br>
+    문 ④의 근거. "deletes an entire file from disk" 한 문장이 이 레슨 전체를 만들었다.
+  </p>
+
+  <h3>다음</h3>
+  <ul class="next-steps">
+    <li><strong>Tiger Cloud 서비스 프로비저닝</strong> — MCP 로. 결정 없이 되는 단계</li>
+    <li><strong><code>migrations/001_extensions.sql</code></strong> — timescaledb + vector 켜기</li>
+    <li><a href="0003-signature-over-bytes.html">Lesson 03 — 서명은 바이트에 대한 것이다</a> · 같은 모양의 교훈(방어의 진짜 경계)</li>
+  </ul>
+
+  <p style="margin-top:1.5rem">
+    해보면 재미있는 것 — DB 가 서면 <strong>일부러 순서대로 뚫어보자.</strong>
+    DELETE 트리거만 걸고 <code>TRUNCATE</code> 를 쏴서 통과하는 걸 눈으로 본 다음,
+    <code>BEFORE TRUNCATE</code> 를 걸고 다시 쏴서 막히는 걸 본다.
+    <strong>막히는 것만 보면 무엇을 막았는지 모른다.</strong>
+  </p>
+
+  <p>
+    막히거나 애매한 부분은 그대로 물어보면 된다. 이 레슨을 쓴 에이전트가 선생이다.
+  </p>
+</div>
+
+<script src="../assets/quiz.js"></script>
+</body>
+</html>
