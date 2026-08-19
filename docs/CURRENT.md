@@ -3,7 +3,7 @@
 > 새 세션이 콜드 스타트할 때 **가장 먼저 읽는 파일.**
 > "지금 뭐가 진짜로 살아있고, 뭐가 스텁이고, 다음 한 걸음이 뭔가"만 적는다. 설계는 여기 안 적는다.
 
-**마지막 갱신**: 2026-08-19 · **M5 착수 — `engine.py` 스캐폴드까지 · M1 테스트 미작성 · M0 독립검증 대기**
+**마지막 갱신**: 2026-08-19 · **M5 — `engine.py`·`state.py` 확정, 다음은 배선 · M1 테스트 미작성 · M0 독립검증 대기**
 
 ---
 
@@ -97,9 +97,9 @@
 
 | | | 상태 |
 |---|---|---|
-| `learning/lessons/` | 레슨 **6개** (01 스키마 · 02 인젝션 · 03 HMAC · 04 멱등성 · 05 삭제 문 4개 · **06 부분 실패**) | ✅ |
-| `learning/sims/` | 시뮬 **6개** — 0001~0006 전부 | ✅ |
-| `learning/NOTEBOOK.md` | **사용자가 자기 말로 적는 곳.** Claude가 채우지 않는다 | ✅ **6/6 전부 4/4** (`/learn-check`) |
+| `learning/lessons/` | 레슨 **7개** (01 스키마 · 02 인젝션 · 03 HMAC · 04 멱등성 · 05 삭제 문 4개 · 06 부분 실패 · **07 리듀서=허가**) | ✅ |
+| `learning/sims/` | 시뮬 **7개** — 0001~0007 전부 | ✅ |
+| `learning/NOTEBOOK.md` | **사용자가 자기 말로 적는 곳.** Claude가 채우지 않는다 | ✅ **7/7 전부 4/4** (`/learn-check`) |
 | `.claude/skills/learn-check/` | 학습 사이클을 **파일로** 판정하는 프로젝트 스킬 | ✅ `/learn-check` 또는 `python3 .claude/skills/learn-check/scripts/check.py` |
 
 `CLAUDE.md`의 학습 사이클이 **읽기 → 만지기 → 적기 → 만들기** 4단계로 바뀌었다.
@@ -171,15 +171,15 @@ M3·M4 를 건너뛰어도 되는 이유: 로그가 없어도 돌고, M1 의 큐
 
 | | 만들 것 | 상태 |
 |---|---|---|
-| 1 | `backend/orchestration/engine.py` — 추상 계약 | 🔶 **스캐폴드만. `TODO(human)` 미완** ← 다음 한 걸음 |
-| 2 | state 정의 + 리듀서 (`Annotated[list, operator.add]`) | ⬜ |
-| 3 | `langgraph_engine.py` — 팬아웃/팬인 배선 | ⬜ |
+| 1 | `backend/orchestration/engine.py` — 추상 계약 | ✅ 세 메서드 확정 (2026-08-19) |
+| 2 | `backend/orchestration/state.py` — state + 리듀서 | ✅ 확정 (2026-08-19) |
+| 3 | `langgraph_engine.py` — 팬아웃/팬인 배선 | ⬜ ← **다음 한 걸음** |
 | 4 | 더미 노드 4개 (sleep + 가짜 Finding) | ⬜ |
 | 5 | 모든 노드에 타임아웃 [01:05:02] | ⬜ |
 | 6 | 체크포인터 — **결정 필요** | ⬜ |
 | 7 | `scripts/demo_m5.py` | ⬜ |
 
-**1번에서 나온 결론** (시그니처 논의, 아직 코드에 안 들어감):
+**1번에서 내린 결정** (코드에 들어감 — 근거는 `engine.py` 주석):
 - 세 메서드가 **같은 식별자 하나**를 인자로 받는다. LangGraph 의 `thread_id` 이고
   **호출자가 준다** (1차 출처: "Pass a `thread_id` in graph config").
 - ⚠️ **그 식별자를 `run()` 의 반환값으로 하면 안 된다.** 반환값은 함수가 끝나야 생기는데,
@@ -187,6 +187,31 @@ M3·M4 를 건너뛰어도 되는 이유: 로그가 없어도 돌고, M1 의 큐
   → 이름은 **PR 정보(repo·pr_id·head_sha)로 계산**한다. 저장이 아니라 계산이라 몇 번이든 다시 얻는다.
   004 의 `reviews_unique_head` 와 같은 재료 — 저긴 중복 방지, 여긴 재개용 열쇠.
 - ⚠️ **엔진은 DB 를 모른다.** M5 에 DB 가 안 들어오므로 식별자도 DB 와 무관하다.
+
+**2번에서 내린 결정** (근거는 `state.py` 주석):
+
+셈의 규칙 하나로 전부 갈렸다 — **한 superstep 안에서 몇 개 노드가 이 칸에 쓰나.**
+둘 이상이면 리듀서, 하나거나 없으면 안 단다.
+
+| 필드 | 쓰는 노드 | 리듀서 |
+|---|---|---|
+| `review_key` · `diff` | 0 (읽기만) | ❌ — **안 다는 것이 방어다.** 둘이 쓰면 터져서 잡힌다 |
+| `findings` | 4 | ✅ `Annotated[list[Finding], operator.add]` |
+| `failed_agents` | 4 | ✅ `Annotated[list[str], operator.add]` |
+
+- **`context` 를 뺐다** — M7 RAG 전엔 아무도 안 채운다. "있는데 항상 빈 칸"은 거짓말이다.
+  aggregate 산출물 자리도 같은 이유로 안 팠다(M6).
+- **`failed_agents` 는 이름만** — 004 의 `TEXT[]` 가 착지점. M8 게이트가 묻는 건
+  "누가 못 봤나"이지 "왜"가 아니다. 이유는 M3 `record_event` 의 몫.
+- ⚠️ **`Annotated[str, operator.add]` 는 함정** — 문자열끼리 `+` 라
+  `'docsqualitysecuritytesting'` 으로 붙는다. 타입 체커도 LangGraph 도 통과시킨다.
+
+📌 **1차 출처 두 문장의 모순을 실측으로 갈랐다** ([Lesson 07](../learning/lessons/0007-permission-to-write-together.html)):
+*"the entire superstep is transactional"* 과 *"successful nodes... don't repeat when resumed"* 는
+**층이 다르다** — 채널(`channel_values`)에는 아무것도 커밋 안 되고, 이미 **끝난** 노드의 출력만
+`pending_writes` 로 남는다. ⚠️ 누가 끝났는지는 **타이밍에 달렸다** — 같은 코드를 두 번 돌려 결과가 갈렸다.
+→ **6번(체크포인터)이 선택 사항이 아님이 확정됐다.** `resume()` 이 INV-2 를 지키는 메커니즘이
+per-task writes 인데, 체크포인터가 없으면 그게 존재하지 않는다.
 
 **6번 결정**: 인메모리 체크포인터는 완료 판정 ②(`kill -9` 재개)를 **통과 못 한다.**
 후보는 Sqlite(파일 하나) / Postgres(이미 떠 있음). 그 단계에서 정한다.

@@ -82,8 +82,20 @@
   리듀서(`Annotated[list, operator.add]`)와 노드별 retry policy 도 여기.
   ⚠️ 체크포인터가 있으면 **"results from successful nodes within a superstep are saved,
   and don't repeat when resumed"** — 재개 시 중복 호출을 막는 근거.
+  📌 **두 인용은 모순이 아니다 — 층이 다르다** (2026-08-19 실측으로 확인):
+  전자는 **채널**(정식 체크포인트) 층 — 실패하면 `channel_values` 가 비어 있다.
+  후자는 **태스크**(pending writes) 층 — 터진 순간까지 **끝나 있던** 노드만 남는다.
+  ⚠️ 누가 끝났는지는 **타이밍에 달렸다**. 같은 코드를 두 번 돌려 결과가 갈렸다 → **비결정적**.
+  그래서 이 동작에 기대면 안 되고, 노드 안에서 예외를 값으로 바꾸는 게 유일하게 결정적이다.
   Use for: M5 `langgraph_engine.py`. G6(애그리게이터 계약)의 입력 모양.
-  [Lesson 06](lessons/0006-nobody-looked.html)
+  [Lesson 06](lessons/0006-nobody-looked.html) · [Lesson 07](lessons/0007-permission-to-write-together.html)
+
+- [LangGraph — Checkpointers](https://docs.langchain.com/oss/python/langgraph/checkpointers)
+  **"As each node finishes, its outputs are written as task entries... These per-task writes
+  ensure successful nodes' outputs are durable and don't need re-running on resume."**
+  `put_writes` 계약, superstep 체크포인트와 task write 의 차이.
+  Use for: M5-6 체크포인터 선택(Sqlite / Postgres)의 근거. `resume()` 이 INV-2 를 지키는 메커니즘.
+  [Lesson 07](lessons/0007-permission-to-write-together.html)
 
 ## Wisdom (Communities)
 

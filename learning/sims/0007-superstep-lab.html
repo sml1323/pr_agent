@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sim 07 — superstep 실험실</title>
+<style>
+:root{
+  --bg:#fffef9; --fg:#1a1a18; --muted:#6b6b63; --rule:#ddd9cc;
+  --accent:#8a2b1f; --accent-soft:#f5ece9; --code-bg:#f4f2ea;
+  --ok:#2d6a4a; --ok-soft:#e8f2ec; --warn:#8a5a00; --warn-soft:#faf1dd;
+  --dead:#9b988e; --live:#1f6f8a; --live-soft:#e4f0f4;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#16161a; --fg:#e8e6df; --muted:#9b988e; --rule:#33333a;
+    --accent:#e8836f; --accent-soft:#2a1f1d; --code-bg:#1e1e24;
+    --ok:#7bc39a; --ok-soft:#1c2a23; --warn:#d9a441; --warn-soft:#2a2317;
+    --dead:#55555e; --live:#6fb6cf; --live-soft:#17262c;
+  }
+}
+*{box-sizing:border-box}
+html{font-size:16px}
+body{
+  background:var(--bg); color:var(--fg); margin:0 auto; max-width:64rem;
+  padding:2.5rem 1.25rem 6rem; line-height:1.6;
+  font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Apple SD Gothic Neo","Noto Serif KR",serif;
+}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+.eyebrow{font-family:ui-monospace,Menlo,monospace;font-size:.7rem;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--muted);margin:0 0 .5rem}
+h1{font-size:2rem;line-height:1.15;margin:0 0 .6rem;letter-spacing:-.02em}
+.subtitle{color:var(--muted);margin:0 0 2rem;font-size:1.02rem}
+h2{font-size:1.08rem;margin:2rem 0 .7rem;letter-spacing:-.01em}
+p{margin:0 0 .9rem}
+code{font-family:ui-monospace,Menlo,monospace;font-size:.85em;background:var(--code-bg);
+  padding:.1em .35em;border-radius:3px}
+a{color:var(--accent)}
+
+.panel{border:1px solid var(--rule);border-radius:8px;padding:1rem 1.1rem;margin:0 0 1.2rem;
+  background:color-mix(in srgb,var(--code-bg) 40%,transparent)}
+.panel h3{margin:0 0 .7rem;font-size:.75rem;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);font-family:ui-monospace,Menlo,monospace;font-weight:600}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:1.2rem}
+@media(max-width:760px){.grid2{grid-template-columns:1fr}}
+
+/* ── 조작판 ── */
+.ctl-row{display:flex;align-items:center;gap:.6rem;margin-bottom:.55rem;flex-wrap:wrap}
+.ctl-row > .lbl{font-size:.82rem;color:var(--muted);min-width:5.2rem;font-family:ui-monospace,Menlo,monospace}
+.seg{display:inline-flex;border:1px solid var(--rule);border-radius:5px;overflow:hidden}
+.seg button{background:var(--bg);border:none;padding:.32rem .8rem;font:inherit;font-size:.82rem;
+  cursor:pointer;color:var(--muted);border-right:1px solid var(--rule)}
+.seg button:last-child{border-right:none}
+.seg button.on{background:var(--live-soft);color:var(--live);font-weight:600}
+.chip{border:1px solid var(--rule);border-radius:20px;padding:.22rem .7rem;font-size:.78rem;
+  cursor:pointer;background:var(--bg);color:var(--muted);font-family:ui-monospace,Menlo,monospace}
+.chip.on{border-color:var(--ok);background:var(--ok-soft);color:var(--ok);font-weight:600}
+.chip.warnon{border-color:var(--warn);background:var(--warn-soft);color:var(--warn);font-weight:600}
+
+table.nodes{width:100%;border-collapse:collapse;font-size:.84rem;margin-top:.3rem}
+table.nodes th{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+  text-align:left;padding:.3rem .4rem;font-weight:600}
+table.nodes td{padding:.32rem .4rem;border-top:1px solid var(--rule);vertical-align:middle}
+table.nodes select,table.nodes input[type=range]{font:inherit;font-size:.8rem}
+table.nodes select{background:var(--bg);color:var(--fg);border:1px solid var(--rule);
+  border-radius:4px;padding:.15rem .3rem}
+input[type=range]{width:6.5rem;accent-color:var(--live)}
+
+/* ── 그래프 ── */
+.graph{display:flex;align-items:center;gap:.5rem;margin:.4rem 0 .2rem;flex-wrap:wrap}
+.gnode{flex:1;min-width:6rem;border:1px solid var(--rule);border-radius:6px;padding:.5rem .6rem;
+  background:var(--bg);position:relative;overflow:hidden;transition:border-color .2s,opacity .2s}
+.gnode .nm{font-family:ui-monospace,Menlo,monospace;font-size:.78rem;font-weight:600}
+.gnode .st{font-size:.7rem;color:var(--muted);margin-top:.15rem;min-height:1em}
+.gnode .bar{position:absolute;left:0;bottom:0;height:3px;width:0;background:var(--live);transition:width linear}
+.gnode.done{border-color:var(--ok)} .gnode.done .bar{background:var(--ok);width:100%}
+.gnode.boom{border-color:var(--accent);background:var(--accent-soft)}
+.gnode.lost{border-color:var(--dead);opacity:.55}
+.gnode.lost .bar{background:var(--dead)}
+.gnode.idle{opacity:.45}
+
+/* ── 저장소 두 층 ── */
+.store{border:1px solid var(--rule);border-radius:6px;padding:.6rem .7rem;margin-bottom:.6rem;background:var(--bg)}
+.store .hd{font-family:ui-monospace,Menlo,monospace;font-size:.72rem;color:var(--muted);margin-bottom:.35rem}
+.store .val{font-family:ui-monospace,Menlo,monospace;font-size:.8rem;word-break:break-all}
+.store.hot{border-color:var(--live)}
+.tag{display:inline-block;font-family:ui-monospace,Menlo,monospace;font-size:.68rem;
+  padding:.05rem .4rem;border-radius:3px;margin-left:.35rem}
+.tag.commit{background:var(--ok-soft);color:var(--ok)}
+.tag.pend{background:var(--warn-soft);color:var(--warn)}
+
+.verdict{border-radius:6px;padding:.7rem .9rem;margin:.6rem 0;font-size:.9rem}
+.verdict.ok{background:var(--ok-soft);border-left:3px solid var(--ok)}
+.verdict.bad{background:var(--accent-soft);border-left:3px solid var(--accent)}
+.verdict.warn{background:var(--warn-soft);border-left:3px solid var(--warn)}
+.verdict b{display:block;margin-bottom:.2rem}
+
+button.run{background:var(--live);color:#fff;border:none;border-radius:6px;padding:.55rem 1.4rem;
+  font:inherit;font-size:.92rem;cursor:pointer;font-weight:600}
+button.run:disabled{opacity:.45;cursor:default}
+button.preset{background:var(--bg);border:1px solid var(--rule);border-radius:5px;padding:.35rem .7rem;
+  font:inherit;font-size:.8rem;cursor:pointer;color:var(--fg);margin:0 .35rem .35rem 0;text-align:left}
+button.preset:hover{border-color:var(--accent)}
+
+/* 예측 */
+.pred{border:1px solid var(--live);border-radius:8px;padding:.9rem 1rem;margin:0 0 1.2rem;
+  background:var(--live-soft)}
+.pred .q{font-weight:600;margin:0 0 .6rem;font-size:.95rem}
+.pred ol{list-style:none;margin:0;padding:0}
+.pred li{border:1px solid var(--rule);border-radius:5px;padding:.45rem .7rem;margin-bottom:.35rem;
+  cursor:pointer;background:var(--bg);font-size:.86rem}
+.pred li:hover{border-color:var(--accent)}
+.pred li.correct{border-color:var(--ok);background:var(--ok-soft)}
+.pred li.wrong{border-color:var(--accent);background:var(--accent-soft)}
+.pred li.locked{cursor:default}
+.streak{float:right;font-family:ui-monospace,Menlo,monospace;font-size:.78rem;color:var(--muted)}
+
+.log{font-family:ui-monospace,Menlo,monospace;font-size:.76rem;line-height:1.7;
+  max-height:11rem;overflow-y:auto;color:var(--muted)}
+.log .hit{color:var(--fg)}
+.log .err{color:var(--accent)}
+.log .lost{color:var(--dead)}
+.note{font-size:.86rem;color:var(--muted);margin-top:.5rem}
+.kbd{font-family:ui-monospace,Menlo,monospace;font-size:.75rem;background:var(--code-bg);
+  padding:.05em .3em;border-radius:3px}
+</style>
+</head>
+<body>
+
+<p class="eyebrow">Sim 07 · Lesson 07 · M5-2</p>
+<h1>superstep 실험실</h1>
+<p class="subtitle">배선을 바꾸고, 리듀서를 끄고, 노드를 터뜨린다. <strong>돌리기 전에 먼저 예측할 것.</strong></p>
+
+<div class="pred" id="pred" style="display:none">
+  <span class="streak" id="streak">연속 0</span>
+  <p class="q" id="predq">이 설정으로 돌리면 어떻게 되나?</p>
+  <ol id="predopts"></ol>
+</div>
+
+<div class="grid2">
+  <div>
+    <div class="panel">
+      <h3>조작판</h3>
+      <div class="ctl-row">
+        <span class="lbl">배선</span>
+        <span class="seg" id="wiring">
+          <button data-v="parallel" class="on">병렬 (한 superstep)</button>
+          <button data-v="sequential">순차 (각자 superstep)</button>
+        </span>
+      </div>
+      <div class="ctl-row">
+        <span class="lbl">리듀서</span>
+        <span class="chip on" data-ch="findings">findings</span>
+        <span class="chip on" data-ch="failed">failed</span>
+        <span class="chip" data-ch="diff">diff</span>
+      </div>
+      <table class="nodes">
+        <thead><tr><th>노드</th><th>상태</th><th>걸리는 시간</th><th>diff에도 씀</th></tr></thead>
+        <tbody id="nodetbl"></tbody>
+      </table>
+      <p style="margin:.8rem 0 0"><button class="run" id="runbtn">▶ 돌린다</button></p>
+    </div>
+
+    <div class="panel">
+      <h3>함정 프리셋 — 눌러서 설정을 갈아끼운다</h3>
+      <div id="presets"></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="panel">
+      <h3>그래프</h3>
+      <div class="graph" id="graph"></div>
+      <p class="note" id="stepnote">아직 안 돌렸다.</p>
+    </div>
+
+    <div class="panel">
+      <h3>저장소 — 층이 둘이다</h3>
+      <div class="store" id="s-chan">
+        <div class="hd">checkpoint.channel_values <span class="tag commit">정식 커밋</span></div>
+        <div class="val" id="v-chan">—</div>
+      </div>
+      <div class="store" id="s-pend">
+        <div class="hd">pending_writes <span class="tag pend">태스크 층</span></div>
+        <div class="val" id="v-pend">—</div>
+      </div>
+      <div class="store">
+        <div class="hd">get_state().values <span class="tag">둘을 합쳐 보여줌</span></div>
+        <div class="val" id="v-state">—</div>
+      </div>
+      <div class="store">
+        <div class="hd">재개하면 다시 도는 노드</div>
+        <div class="val" id="v-next">—</div>
+      </div>
+    </div>
+
+    <div id="verdict"></div>
+
+    <div class="panel">
+      <h3>실행 로그</h3>
+      <div class="log" id="log">—</div>
+    </div>
+  </div>
+</div>
+
+<div class="panel" style="margin-top:1.4rem">
+  <h3>해설</h3>
+  <div id="explain"><p class="note">한 판 돌리면 여기에 지금 본 것의 근거가 뜬다.</p></div>
+</div>
+
+<p class="note" style="margin-top:1.6rem">
+돌아가기 → <a href="../lessons/0007-permission-to-write-together.html">Lesson 07</a> ·
+<a href="../lessons/0006-nobody-looked.html">Lesson 06</a> ·
+그다음 <code>NOTEBOOK.md</code> 에 내 말로 3줄
+</p>
+
+<script>
+/* ─────────────────────────────────────────────────────────────
+   엔진 — 하드코딩 없음. 아래 규칙을 실제로 굴려서 결과를 만든다.
+
+   1. 배선이 superstep 을 나눈다. 병렬 = 넷이 한 스텝, 순차 = 넷이 네 스텝
+   2. 한 스텝 안에서 완료 순서는 걸리는 시간 순. 같으면 그때그때 다르다(랜덤)
+   3. 노드가 끝나면 그 출력이 pending_writes 로 간다
+   4. 예외가 노드 밖으로 나가면 그 스텝은 커밋되지 않는다.
+      그 시점까지 pending 에 들어간 것만 남는다 — 뒤에 끝난 건 저장조차 못 한다
+   5. 예외가 없으면 채널별로 도착한 값을 센다.
+      2개 이상인데 리듀서가 없으면 InvalidUpdateError. 있으면 이어붙이고, 1개면 덮어쓴다
+   ───────────────────────────────────────────────────────────── */
+
+const NODES = ["security", "quality", "testing", "docs"];
+const CHANNELS = ["findings", "failed", "diff"];
+
+const cfg = {
+  wiring: "parallel",
+  reducers: { findings: true, failed: true, diff: false },
+  nodes: Object.fromEntries(NODES.map(n => [n, { dur: 2, mode: "ok", writesDiff: false }])),
+};
+
+function nodeWrites(n) {
+  const nd = cfg.nodes[n];
+  const w = [];
+  if (nd.mode === "caught") w.push({ ch: "failed", val: n + ": 타임아웃" });
+  else w.push({ ch: "findings", val: n + " 발견" });
+  if (nd.writesDiff) w.push({ ch: "diff", val: "덧칠" });
+  return w;
+}
+
+function simulate() {
+  const groups = cfg.wiring === "parallel"
+    ? [NODES.slice()]
+    : NODES.map(n => [n]);
+
+  let channels = { findings: [], failed: [], diff: ["원본 diff"] };
+  let pending = [];          // [{node, ch, val}]
+  let error = null;          // {kind, msg, ch?}
+  let nextNodes = [];        // 재개 시 다시 도는 노드
+  const timeline = [];       // 애니메이션용
+
+  for (const group of groups) {
+    // 완료 순서 — 시간 오름차순, 동률은 비결정적
+    const order = group.slice().sort((a, b) => {
+      const d = cfg.nodes[a].dur - cfg.nodes[b].dur;
+      return d !== 0 ? d : (Math.random() < 0.5 ? -1 : 1);
+    });
+
+    const evts = [];
+    let boomed = null;
+    const stepPending = [];
+
+    for (const n of order) {
+      if (boomed) {
+        // 이미 예외가 나갔다 — 이 노드는 끝나도 저장할 곳이 닫혔다
+        evts.push({ node: n, kind: "lost" });
+        nextNodes.push(n);
+        continue;
+      }
+      if (cfg.nodes[n].mode === "boom") {
+        boomed = n;
+        evts.push({ node: n, kind: "boom" });
+        nextNodes.push(n);
+        continue;
+      }
+      const w = nodeWrites(n);
+      w.forEach(x => stepPending.push({ node: n, ch: x.ch, val: x.val }));
+      evts.push({ node: n, kind: "done", w });
+    }
+
+    timeline.push({ group, order, evts, boomed });
+
+    if (boomed) {
+      pending = stepPending;                       // 터진 시점까지 들어간 것만
+      error = { kind: "runtime", msg: "RuntimeError: " + boomed + " 폭발" };
+      break;                                        // 커밋 없이 중단
+    }
+
+    // 커밋 판정 — 채널별 도착 개수
+    const arrived = {};
+    stepPending.forEach(p => (arrived[p.ch] = (arrived[p.ch] || []).concat([p.val])));
+    let bad = null;
+    for (const ch of Object.keys(arrived)) {
+      if (arrived[ch].length > 1 && !cfg.reducers[ch]) { bad = ch; break; }
+    }
+    if (bad) {
+      pending = stepPending;
+      error = {
+        kind: "invalid", ch: bad,
+        msg: "InvalidUpdateError — At key '" + bad + "': Can receive only one value per step.",
+      };
+      nextNodes = group.slice();
+      break;
+    }
+    // 실제 커밋
+    for (const ch of Object.keys(arrived)) {
+      if (cfg.reducers[ch]) channels[ch] = channels[ch].concat(arrived[ch]);
+      else channels[ch] = [arrived[ch][arrived[ch].length - 1]];   // 덮어쓰기
+    }
+  }
+
+  const merged = JSON.parse(JSON.stringify(channels));
+  pending.forEach(p => {
+    if (cfg.reducers[p.ch]) merged[p.ch] = merged[p.ch].concat([p.val]);
+    else merged[p.ch] = [p.val];
+  });
+
+  return { channels, pending, error, nextNodes, timeline, merged };
+}
+
+/* ── 예측 보기 (항상 같은 셋, 정답만 다름) ───────────────────── */
+function outcomeKey(r) {
+  if (!r.error) return "ok";
+  return r.error.kind;                 // "runtime" | "invalid"
+}
+const OPTS = [
+  { k: "ok",      t: "정상 종료 — 채널에 값이 커밋된다" },
+  { k: "invalid", t: "InvalidUpdateError — 한 스텝에 값 둘" },
+  { k: "runtime", t: "RuntimeError — 채널에 아무것도 안 남음" },
+];
+
+/* ── UI ─────────────────────────────────────────────────────── */
+const $ = id => document.getElementById(id);
+let streak = 0, pendingRun = null, busy = false;
+
+function buildNodeTable() {
+  $("nodetbl").innerHTML = NODES.map(n => `
+    <tr>
+      <td class="mono">${n}</td>
+      <td><select data-n="${n}" data-k="mode">
+        <option value="ok">정상</option>
+        <option value="boom">예외를 밖으로</option>
+        <option value="caught">안에서 잡음</option>
+      </select></td>
+      <td><input type="range" min="1" max="5" value="2" data-n="${n}" data-k="dur">
+          <span class="mono" id="dur-${n}">2</span></td>
+      <td style="text-align:center">
+        <input type="checkbox" data-n="${n}" data-k="writesDiff"></td>
+    </tr>`).join("");
+  $("nodetbl").querySelectorAll("select,input").forEach(el => {
+    el.addEventListener("input", () => {
+      const n = el.dataset.n, k = el.dataset.k;
+      cfg.nodes[n][k] = k === "dur" ? +el.value : (k === "writesDiff" ? el.checked : el.value);
+      if (k === "dur") $("dur-" + n).textContent = el.value;
+      syncFromCfg(false);
+    });
+  });
+}
+
+function syncFromCfg(rebuild = true) {
+  $("wiring").querySelectorAll("button").forEach(b =>
+    b.classList.toggle("on", b.dataset.v === cfg.wiring));
+  document.querySelectorAll(".chip[data-ch]").forEach(c => {
+    const on = cfg.reducers[c.dataset.ch];
+    c.classList.toggle("on", on && c.dataset.ch !== "diff");
+    c.classList.toggle("warnon", on && c.dataset.ch === "diff");
+  });
+  if (rebuild) {
+    NODES.forEach(n => {
+      const nd = cfg.nodes[n];
+      document.querySelector(`select[data-n="${n}"]`).value = nd.mode;
+      const r = document.querySelector(`input[type=range][data-n="${n}"]`);
+      r.value = nd.dur; $("dur-" + n).textContent = nd.dur;
+      document.querySelector(`input[type=checkbox][data-n="${n}"]`).checked = nd.writesDiff;
+    });
+  }
+  drawGraph("idle");
+}
+
+function drawGraph(state, evtMap) {
+  const groups = cfg.wiring === "parallel" ? [NODES] : NODES.map(n => [n]);
+  $("graph").innerHTML = groups.map((g, gi) => `
+    <div style="flex:1;min-width:100%;margin-bottom:.4rem">
+      <div class="mono" style="font-size:.68rem;color:var(--muted);margin-bottom:.2rem">
+        superstep ${gi + 1}</div>
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+        ${g.map(n => {
+          const st = evtMap && evtMap[n];
+          const cls = st ? st.kind : (state === "idle" ? "idle" : "idle");
+          const label = st ? ({ done: "✓ 저장됨", boom: "💥 예외", lost: "⚠ 저장 못 함" })[st.kind] : "";
+          return `<div class="gnode ${cls}" style="flex:1;min-width:5.5rem">
+                    <div class="nm">${n}</div><div class="st">${label}</div>
+                    <div class="bar" style="width:${st ? 100 : 0}%"></div>
+                  </div>`;
+        }).join("")}
+      </div>
+    </div>`).join("");
+}
+
+function fmt(arr) { return arr.length ? "[" + arr.map(x => `'${x}'`).join(", ") + "]" : "[]"; }
+function showStores(r, revealed) {
+  const chv = CHANNELS.map(c => `${c}: ${fmt(r.channels[c])}`).join("<br>");
+  $("v-chan").innerHTML = revealed ? chv : "—";
+  $("v-pend").innerHTML = revealed
+    ? (r.pending.length ? r.pending.map(p => `${p.ch} ← '${p.val}' <span style="color:var(--muted)">(${p.node})</span>`).join("<br>") : "[]")
+    : "—";
+  $("v-state").innerHTML = revealed ? CHANNELS.map(c => `${c}: ${fmt(r.merged[c])}`).join("<br>") : "—";
+  $("v-next").innerHTML = revealed ? (r.nextNodes.length ? r.nextNodes.join(", ") : "없음 — 다 끝났다") : "—";
+  $("s-chan").classList.toggle("hot", revealed && !r.error);
+  $("s-pend").classList.toggle("hot", revealed && !!r.error);
+}
+
+function askPrediction(r) {
+  const answer = outcomeKey(r);
+  $("pred").style.display = "block";
+  $("streak").textContent = "연속 " + streak;
+  $("predopts").innerHTML = OPTS.map(o =>
+    `<li data-k="${o.k}">${o.t}</li>`).join("");
+  $("predopts").querySelectorAll("li").forEach(li => {
+    li.addEventListener("click", () => {
+      if (li.classList.contains("locked")) return;
+      const right = li.dataset.k === answer;
+      $("predopts").querySelectorAll("li").forEach(x => {
+        x.classList.add("locked");
+        if (x.dataset.k === answer) x.classList.add("correct");
+        else if (x === li) x.classList.add("wrong");
+      });
+      streak = right ? streak + 1 : 0;
+      $("streak").textContent = "연속 " + streak + (right ? "" : "  (끊김)");
+      playback(r);
+    }, { once: false });
+  });
+}
+
+function playback(r) {
+  busy = true;
+  const log = [];
+  const evtMap = {};
+  let i = 0;
+  const flat = [];
+  r.timeline.forEach((st, si) =>
+    st.evts.forEach(e => flat.push({ ...e, si })));
+
+  function tick() {
+    if (i >= flat.length) { finish(r, log); return; }
+    const e = flat[i++];
+    evtMap[e.node] = e;
+    drawGraph("run", evtMap);
+    const cls = e.kind === "done" ? "hit" : (e.kind === "boom" ? "err" : "lost");
+    const txt = e.kind === "done"
+      ? `superstep ${e.si + 1} · ${e.node} 완료 → ${e.w.map(w => w.ch).join(", ")} 에 write`
+      : e.kind === "boom"
+        ? `superstep ${e.si + 1} · ${e.node} 예외 — 이 스텝의 커밋이 취소된다`
+        : `superstep ${e.si + 1} · ${e.node} 끝났지만 저장소가 이미 닫혔다`;
+    log.push(`<div class="${cls}">${txt}</div>`);
+    $("log").innerHTML = log.join("");
+    $("log").scrollTop = 1e6;
+    setTimeout(tick, 420);
+  }
+  $("stepnote").textContent = "도는 중…";
+  tick();
+}
+
+function finish(r, log) {
+  showStores(r, true);
+  $("stepnote").textContent = "끝. 저장소 두 칸을 비교할 것.";
+  const v = $("verdict");
+  if (!r.error) {
+    v.innerHTML = `<div class="verdict ok"><b>정상 종료</b>
+      채널에 커밋됐다. findings ${r.channels.findings.length}개 · failed ${r.channels.failed.length}개.</div>`;
+  } else if (r.error.kind === "invalid") {
+    v.innerHTML = `<div class="verdict bad"><b>InvalidUpdateError</b>
+      <span class="mono" style="font-size:.8rem">${r.error.msg}</span><br>
+      같은 superstep 에서 <code>${r.error.ch}</code> 에 값이 둘 이상 도착했는데 리듀서가 없다.
+      "덮어쓰기"가 성립하려면 <b>나중</b>이 정해져야 하는데, 동시에는 나중이 없다.</div>`;
+  } else {
+    const saved = r.pending.length, lost = r.nextNodes.length;
+    v.innerHTML = `<div class="verdict warn"><b>RuntimeError — 그런데 전부 날아간 건 아니다</b>
+      <code>channel_values</code> 는 <b>비어 있다</b>(superstep 은 트랜잭셔널).
+      하지만 터지기 <b>전에 끝나 있던</b> ${saved}개 write 는 <code>pending_writes</code> 에 남았다.
+      재개하면 ${lost}개만 다시 돈다.</div>`;
+  }
+  explain(r);
+  busy = false;
+  $("runbtn").disabled = false;
+}
+
+function explain(r) {
+  const bits = [];
+  const groups = cfg.wiring === "parallel" ? 1 : 4;
+  bits.push(`<p><b>superstep ${groups}개.</b> ${cfg.wiring === "parallel"
+    ? "넷이 한 스텝에 들어갔다 — 이 안에서는 <b>누가 나중인지 정의가 없다</b>."
+    : "각자 자기 스텝을 가졌다 — 순서가 정해지므로 덮어쓰기가 성립한다."}</p>`);
+
+  if (r.error && r.error.kind === "invalid") {
+    bits.push(`<p>같은 스텝에서 <code>${r.error.ch}</code> 에 값이 둘 이상 왔다.
+      리듀서를 켜면 이어붙이고, 배선을 순차로 바꾸면 스텝이 갈려서 덮어쓴다.
+      <b>둘 다 에러는 사라지지만 결과가 다르다</b> — 순차는 값이 하나만 남는다.</p>`);
+  }
+  if (r.error && r.error.kind === "runtime") {
+    bits.push(`<p><b>여기가 이 실험실의 핵심이다.</b> 같은 설정으로 다시 돌려봐라 —
+      걸리는 시간이 같은 노드들이 있으면 <b>저장되는 것이 매번 달라진다</b>.
+      살아남는 건 "터진 순간까지 <b>끝나 있던</b>" 것뿐이고, 누가 끝났는지는 그때그때 다르다.
+      그래서 이 동작에 기대면 안 된다.</p>`);
+    bits.push(`<p>해법은 상태를 <code>안에서 잡음</code> 으로 바꾸는 것이다.
+      예외가 노드 밖으로 안 나가면 스텝이 정상 종료해서 <b>넷의 결과가 전부</b> 커밋된다 —
+      실패했다는 사실까지 <code>failed</code> 채널에 값으로.</p>`);
+  }
+  const diffLen = r.merged.diff.length;
+  if (diffLen > 1) {
+    bits.push(`<p style="color:var(--warn)"><b>조용한 사고.</b> <code>diff</code> 가 ${diffLen}개로 늘었다.
+      리듀서를 켜뒀기 때문에 <b>터지는 대신 덧칠됐다</b>. 아무도 안 쓰는 채널에 리듀서를 다는 게
+      왜 방어를 해제하는 것인지가 이거다 — 껐다면 InvalidUpdateError 로 즉시 잡혔다.</p>`);
+  }
+  if (!r.error && cfg.wiring === "sequential" && r.channels.findings.length < 4
+      && NODES.every(n => cfg.nodes[n].mode === "ok") && !cfg.reducers.findings) {
+    bits.push(`<p style="color:var(--warn)"><b>더 조용한 사고.</b> 에러 하나 없이 끝났는데
+      findings 가 ${r.channels.findings.length}개다. 순차 + 리듀서 없음 = <b>매번 덮어써서 마지막 하나만</b> 남았다.
+      병렬이었다면 터졌을 버그가 순차에서는 조용히 지나간다.</p>`);
+  }
+  $("explain").innerHTML = bits.join("");
+}
+
+/* ── 프리셋 ─────────────────────────────────────────────────── */
+const PRESETS = [
+  { name: "① 리듀서를 뺐다", desc: "병렬 · findings 리듀서 OFF",
+    apply: () => { cfg.wiring = "parallel"; cfg.reducers.findings = false;
+      NODES.forEach(n => Object.assign(cfg.nodes[n], { mode: "ok", dur: 2, writesDiff: false })); } },
+  { name: "② 순차로 바꿔 에러를 없앴다", desc: "같은 버그인데 조용해진다",
+    apply: () => { cfg.wiring = "sequential"; cfg.reducers.findings = false;
+      NODES.forEach(n => Object.assign(cfg.nodes[n], { mode: "ok", dur: 2, writesDiff: false })); } },
+  { name: "③ diff 에 리듀서를 달았다", desc: "실수로 두 노드가 diff 를 덧칠",
+    apply: () => { cfg.wiring = "parallel"; cfg.reducers.findings = true; cfg.reducers.diff = true;
+      NODES.forEach((n, i) => Object.assign(cfg.nodes[n],
+        { mode: "ok", dur: 2, writesDiff: i < 2 })); } },
+  { name: "④ security 가 터졌다 (시간 제각각)", desc: "누가 살아남는지 보인다",
+    apply: () => { cfg.wiring = "parallel"; cfg.reducers.findings = true; cfg.reducers.diff = false;
+      const d = { security: 3, quality: 1, testing: 2, docs: 5 };
+      NODES.forEach(n => Object.assign(cfg.nodes[n],
+        { mode: n === "security" ? "boom" : "ok", dur: d[n], writesDiff: false })); } },
+  { name: "⑤ 넷이 동시에 끝난다 · 하나가 터짐", desc: "★ 여러 번 돌려라 — 매번 다르다",
+    apply: () => { cfg.wiring = "parallel"; cfg.reducers.findings = true; cfg.reducers.diff = false;
+      NODES.forEach(n => Object.assign(cfg.nodes[n],
+        { mode: n === "security" ? "boom" : "ok", dur: 3, writesDiff: false })); } },
+  { name: "⑥ 안에서 잡았다", desc: "M5 에서 실제로 쓸 모양",
+    apply: () => { cfg.wiring = "parallel"; cfg.reducers.findings = true; cfg.reducers.failed = true;
+      cfg.reducers.diff = false;
+      NODES.forEach(n => Object.assign(cfg.nodes[n],
+        { mode: n === "security" ? "caught" : "ok", dur: 2, writesDiff: false })); } },
+];
+
+$("presets").innerHTML = PRESETS.map((p, i) =>
+  `<button class="preset" data-i="${i}"><b>${p.name}</b><br>
+   <span style="color:var(--muted);font-size:.75rem">${p.desc}</span></button>`).join("");
+$("presets").querySelectorAll("button").forEach(b =>
+  b.addEventListener("click", () => {
+    if (busy) return;
+    PRESETS[+b.dataset.i].apply();
+    syncFromCfg(true);
+    $("verdict").innerHTML = ""; $("log").innerHTML = "—";
+    showStores({ channels: {}, pending: [], merged: {}, nextNodes: [] }, false);
+    $("explain").innerHTML = `<p class="note">설정을 갈아끼웠다. <b>돌리기 전에 결과를 예측할 것.</b></p>`;
+  }));
+
+$("wiring").querySelectorAll("button").forEach(b =>
+  b.addEventListener("click", () => { if (!busy) { cfg.wiring = b.dataset.v; syncFromCfg(false); } }));
+document.querySelectorAll(".chip[data-ch]").forEach(c =>
+  c.addEventListener("click", () => {
+    if (busy) return;
+    cfg.reducers[c.dataset.ch] = !cfg.reducers[c.dataset.ch];
+    syncFromCfg(false);
+  }));
+
+$("runbtn").addEventListener("click", () => {
+  if (busy) return;
+  $("runbtn").disabled = true;
+  $("verdict").innerHTML = ""; $("log").innerHTML = "—";
+  const r = simulate();                 // ← 결과를 먼저 확정하고
+  showStores(r, false);
+  askPrediction(r);                     // ← 예측을 받은 뒤 재생한다
+});
+
+buildNodeTable();
+syncFromCfg(true);
+showStores({ channels: {}, pending: [], merged: {}, nextNodes: [] }, false);
+</script>
+</body>
+</html>
