@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sim 09 — catch 범위 실험실</title>
+<style>
+:root{
+  --bg:#fffef9; --fg:#1a1a18; --muted:#6b6b63; --rule:#ddd9cc;
+  --accent:#8a2b1f; --accent-soft:#f5ece9; --code-bg:#f4f2ea;
+  --ok:#2d6a4a; --ok-soft:#e8f2ec; --warn:#8a5a00; --warn-soft:#faf1dd;
+  --dead:#9b988e; --live:#1f6f8a; --live-soft:#e4f0f4;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#16161a; --fg:#e8e6df; --muted:#9b988e; --rule:#33333a;
+    --accent:#e8836f; --accent-soft:#2a1f1d; --code-bg:#1e1e24;
+    --ok:#7bc39a; --ok-soft:#1c2a23; --warn:#d9a441; --warn-soft:#2a2317;
+    --dead:#55555e; --live:#6fb6cf; --live-soft:#17262c;
+  }
+}
+*{box-sizing:border-box}
+html{font-size:16px}
+body{background:var(--bg);color:var(--fg);margin:0 auto;max-width:64rem;
+  padding:2.5rem 1.25rem 6rem;line-height:1.6;
+  font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Apple SD Gothic Neo","Noto Serif KR",serif}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+.eyebrow{font-family:ui-monospace,Menlo,monospace;font-size:.7rem;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--muted);margin:0 0 .5rem}
+h1{font-size:2rem;line-height:1.15;margin:0 0 .6rem;letter-spacing:-.02em}
+.subtitle{color:var(--muted);margin:0 0 2rem;font-size:1.02rem}
+p{margin:0 0 .9rem}
+code{font-family:ui-monospace,Menlo,monospace;font-size:.85em;background:var(--code-bg);
+  padding:.1em .35em;border-radius:3px}
+a{color:var(--accent)}
+.panel{border:1px solid var(--rule);border-radius:8px;padding:1rem 1.1rem;margin:0 0 1.2rem;
+  background:color-mix(in srgb,var(--code-bg) 40%,transparent)}
+.panel h3{margin:0 0 .7rem;font-size:.75rem;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);font-family:ui-monospace,Menlo,monospace;font-weight:600}
+.grid2{display:grid;grid-template-columns:1.05fr 1fr;gap:1.2rem}
+@media(max-width:860px){.grid2{grid-template-columns:1fr}}
+
+table.ag{width:100%;border-collapse:collapse;font-size:.84rem}
+table.ag th{font-size:.66rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+  text-align:left;padding:.3rem .4rem;font-weight:600}
+table.ag td{padding:.3rem .4rem;border-top:1px solid var(--rule);vertical-align:middle}
+select{font:inherit;font-size:.79rem;background:var(--bg);color:var(--fg);
+  border:1px solid var(--rule);border-radius:4px;padding:.15rem .3rem;max-width:100%}
+
+.clause{border:1px solid var(--rule);border-radius:6px;padding:.45rem .6rem;margin-bottom:.4rem;
+  background:var(--bg);display:flex;align-items:center;gap:.5rem;font-size:.85rem}
+.clause .mono{flex:1}
+.clause .kind{font-size:.68rem;font-family:ui-monospace,Menlo,monospace;padding:.1rem .4rem;border-radius:3px}
+.clause .kind.exp{background:var(--ok-soft);color:var(--ok)}
+.clause .kind.bug{background:var(--warn-soft);color:var(--warn)}
+.clause button{background:none;border:1px solid var(--rule);border-radius:4px;cursor:pointer;
+  font:inherit;font-size:.72rem;color:var(--muted);padding:.05rem .35rem}
+.clause.hit{border-color:var(--live);background:var(--live-soft)}
+.clause.dead{opacity:.45;border-style:dashed}
+
+.add{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.5rem}
+.add button{background:var(--bg);border:1px solid var(--rule);border-radius:20px;padding:.2rem .6rem;
+  font:inherit;font-size:.74rem;cursor:pointer;color:var(--fg);font-family:ui-monospace,Menlo,monospace}
+.add button:hover{border-color:var(--accent)}
+
+button.run{background:var(--live);color:#fff;border:none;border-radius:6px;padding:.5rem 1.3rem;
+  font:inherit;font-size:.92rem;cursor:pointer;font-weight:600}
+button.run:disabled{opacity:.45;cursor:default}
+button.preset{background:var(--bg);border:1px solid var(--rule);border-radius:5px;padding:.35rem .7rem;
+  font:inherit;font-size:.78rem;cursor:pointer;color:var(--fg);margin:0 .3rem .3rem 0;text-align:left}
+button.preset:hover{border-color:var(--accent)}
+
+.pred{border:1px solid var(--live);border-radius:8px;padding:.9rem 1rem;margin:0 0 1.2rem;background:var(--live-soft)}
+.pred .q{font-weight:600;margin:0 0 .6rem;font-size:.95rem}
+.pred ol{list-style:none;margin:0;padding:0}
+.pred li{border:1px solid var(--rule);border-radius:5px;padding:.45rem .7rem;margin-bottom:.35rem;
+  cursor:pointer;background:var(--bg);font-size:.84rem;font-family:ui-monospace,Menlo,monospace}
+.pred li:hover{border-color:var(--accent)}
+.pred li.correct{border-color:var(--ok);background:var(--ok-soft)}
+.pred li.wrong{border-color:var(--accent);background:var(--accent-soft)}
+.pred li.locked{cursor:default}
+.streak{float:right;font-family:ui-monospace,Menlo,monospace;font-size:.78rem;color:var(--muted)}
+
+.res{border:1px solid var(--rule);border-radius:6px;padding:.6rem .7rem;margin-bottom:.6rem;background:var(--bg);
+  font-family:ui-monospace,Menlo,monospace;font-size:.8rem}
+.res .row{display:flex;justify-content:space-between;padding:.15rem 0}
+.verdict{border-radius:6px;padding:.7rem .9rem;margin:.6rem 0;font-size:.9rem}
+.verdict.ok{background:var(--ok-soft);border-left:3px solid var(--ok)}
+.verdict.bad{background:var(--accent-soft);border-left:3px solid var(--accent)}
+.verdict.warn{background:var(--warn-soft);border-left:3px solid var(--warn)}
+.verdict b{display:block;margin-bottom:.2rem}
+.log{font-family:ui-monospace,Menlo,monospace;font-size:.75rem;line-height:1.8;color:var(--muted);
+  max-height:12rem;overflow-y:auto}
+.log .hit{color:var(--fg)} .log .err{color:var(--accent)} .log .warn{color:var(--warn)}
+.note{font-size:.85rem;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<p class="eyebrow">Sim 09 · Lesson 09 · M5-4</p>
+<h1>catch 범위 실험실</h1>
+<p class="subtitle"><code>except</code> 절을 <strong>직접 쌓아라.</strong> 한 절이 우리 버그를 위장시키는지, 드러내는지 본다.</p>
+
+<div class="pred" id="pred" style="display:none">
+  <span class="streak" id="streak">연속 0</span>
+  <p class="q">이 catch 구성으로 돌리면?</p>
+  <ol id="predopts"></ol>
+</div>
+
+<div class="grid2">
+  <div>
+    <div class="panel">
+      <h3>에이전트 넷 — 각자 무엇을 던지나</h3>
+      <table class="ag"><tbody id="agtbl"></tbody></table>
+    </div>
+
+    <div class="panel">
+      <h3>except 절 — 위에서부터 순서대로 맞춰본다</h3>
+      <div class="mono" style="font-size:.82rem;color:var(--muted);margin-bottom:.4rem">try: finding = _call_agent(...)</div>
+      <div id="clauses"></div>
+      <div class="add" id="addbar"></div>
+      <p style="margin:.8rem 0 0"><button class="run" id="runbtn">▶ 돌린다</button></p>
+    </div>
+
+    <div class="panel">
+      <h3>프리셋</h3>
+      <div id="presets"></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="panel">
+      <h3>결과</h3>
+      <div class="res" id="res">—</div>
+      <div id="verdict"></div>
+    </div>
+    <div class="panel">
+      <h3>예외가 절을 통과하는 과정</h3>
+      <div class="log" id="log">—</div>
+    </div>
+  </div>
+</div>
+
+<div class="panel" style="margin-top:1.2rem">
+  <h3>해설</h3>
+  <div id="explain"><p class="note">한 판 돌리면 여기에 근거가 뜬다.</p></div>
+</div>
+
+<p class="note" style="margin-top:1.5rem">
+돌아가기 → <a href="../lessons/0009-expected-failure-vs-bug.html">Lesson 09</a> ·
+<a href="../lessons/0006-nobody-looked.html">Lesson 06</a> ·
+그다음 <code>NOTEBOOK.md</code> 에 내 말로 3줄
+</p>
+
+<script>
+/* ─────────────────────────────────────────────────────────────
+   엔진 — 실제 파이썬/SDK 계층을 그대로 옮겼다 (설치된 openai 에서 조회한 값).
+   isinstance 판정 = 예외의 부모 사슬에 catcher 가 있나.
+   except 절은 위에서부터 첫 매치에서 멈춘다.
+   ───────────────────────────────────────────────────────────── */
+const PARENT = {
+  BaseException: null,
+  Exception: "BaseException",
+  KeyboardInterrupt: "BaseException",          // ← Exception 밑이 아니다
+  LookupError: "Exception",
+  KeyError: "LookupError",
+  TypeError: "Exception",
+  OpenAIError: "Exception",
+  APIError: "OpenAIError",
+  APIConnectionError: "APIError",
+  APITimeoutError: "APIConnectionError",
+  APIStatusError: "APIError",
+  RateLimitError: "APIStatusError",
+  LengthFinishReasonError: "OpenAIError",       // ← APIError 밑이 아니다
+  ContentFilterFinishReasonError: "OpenAIError",// ← 마찬가지
+};
+const chain = t => { const r = []; let c = t; while (c) { r.push(c); c = PARENT[c]; } return r; };
+const isa = (t, base) => chain(t).includes(base);
+
+// 던질 수 있는 것들 — SDK 예외인지(=예상한 실패인지)를 같이 표시
+const THROWS = [
+  { v: "OK",                            l: "정상 (Finding 반환)",              sdk: null },
+  { v: "APITimeoutError",               l: "APITimeoutError — 응답 없음",       sdk: true },
+  { v: "RateLimitError",                l: "RateLimitError — 호출 한도",        sdk: true },
+  { v: "LengthFinishReasonError",       l: "LengthFinishReasonError — 잘림",    sdk: true },
+  { v: "ContentFilterFinishReasonError",l: "ContentFilter… — 필터에 걸림",      sdk: true },
+  { v: "KeyError",                      l: "KeyError — 우리 오타 🐛",           sdk: false },
+  { v: "TypeError",                     l: "TypeError — 우리 버그 🐛",          sdk: false },
+  { v: "KeyboardInterrupt",             l: "KeyboardInterrupt — 사람이 Ctrl+C", sdk: null },
+];
+const CATCHERS = ["OpenAIError", "APIError", "APIStatusError", "Exception", "BaseException"];
+const AGENTS = ["security", "quality", "testing", "docs"];
+
+let throwOf = { security: "APITimeoutError", quality: "KeyError",
+                testing: "LengthFinishReasonError", docs: "OK" };
+let clauses = ["OpenAIError", "Exception"];
+let busy = false, streak = 0;
+
+// 절의 분류: SDK 계열이면 "예상한 실패", 아니면 "버그 의심"
+const kindOf = c => isa(c, "OpenAIError") ? "exp" : "bug";
+
+function simulate() {
+  const rows = [];
+  for (const a of AGENTS) {
+    const t = throwOf[a];
+    if (t === "OK") { rows.push({ agent: a, thrown: null, caughtBy: null, idx: -1 }); continue; }
+    let idx = -1;
+    for (let i = 0; i < clauses.length; i++) {
+      if (isa(t, clauses[i])) { idx = i; break; }      // 첫 매치에서 멈춘다
+    }
+    rows.push({ agent: a, thrown: t, caughtBy: idx >= 0 ? clauses[idx] : null, idx });
+  }
+  const escaped = rows.filter(r => r.thrown && r.idx < 0);
+  const graphDies = escaped.length > 0;
+  const failed = rows.filter(r => r.idx >= 0).map(r => r.agent);
+  const findings = graphDies ? 0 : rows.filter(r => !r.thrown).length;
+
+  // 한 절이 SDK 예외와 우리 버그를 **같이** 잡았나 → 구분 불가(위장)
+  const masked = [];
+  clauses.forEach((c, i) => {
+    const got = rows.filter(r => r.idx === i).map(r => r.thrown);
+    const hasSdk = got.some(t => isa(t, "OpenAIError"));
+    const hasBug = got.some(t => !isa(t, "OpenAIError"));
+    if (hasSdk && hasBug) masked.push({ clause: c, got });
+  });
+  // 도달 불가능한 절 (위 절이 이미 다 잡는 경우)
+  const deadClauses = clauses.map((c, i) =>
+    i > 0 && clauses.slice(0, i).some(prev => isa(c, prev)) ? i : -1).filter(i => i >= 0);
+
+  return { rows, escaped, graphDies, failed, findings, masked, deadClauses };
+}
+
+/* ── UI ─────────────────────────────────────────────────────── */
+const $ = id => document.getElementById(id);
+
+function drawAgents() {
+  $("agtbl").innerHTML = AGENTS.map(a => `
+    <tr><td class="mono" style="width:5.5rem">${a}</td>
+    <td><select data-a="${a}">${THROWS.map(t =>
+      `<option value="${t.v}"${throwOf[a] === t.v ? " selected" : ""}>${t.l}</option>`).join("")}</select></td></tr>`).join("");
+  $("agtbl").querySelectorAll("select").forEach(s =>
+    s.addEventListener("change", () => { throwOf[s.dataset.a] = s.value; reset(); }));
+}
+
+function drawClauses(result) {
+  $("clauses").innerHTML = clauses.length
+    ? clauses.map((c, i) => {
+        const dead = result && result.deadClauses.includes(i);
+        const hit = result && result.rows.some(r => r.idx === i);
+        return `<div class="clause ${hit ? "hit" : ""} ${dead ? "dead" : ""}">
+          <span class="mono">except ${c}:</span>
+          <span class="kind ${kindOf(c)}">${kindOf(c) === "exp" ? "예상한 실패" : "버그 의심"}</span>
+          <button data-up="${i}" ${i === 0 ? "disabled" : ""}>↑</button>
+          <button data-del="${i}">✕</button></div>`;
+      }).join("")
+    : `<p class="note">절이 하나도 없다 — 예외가 전부 밖으로 나간다.</p>`;
+  $("clauses").querySelectorAll("button").forEach(b =>
+    b.addEventListener("click", () => {
+      if (busy) return;
+      if (b.dataset.up !== undefined) {
+        const i = +b.dataset.up;
+        [clauses[i - 1], clauses[i]] = [clauses[i], clauses[i - 1]];
+      } else clauses.splice(+b.dataset.del, 1);
+      drawClauses(); reset();
+    }));
+  $("addbar").innerHTML = CATCHERS.filter(c => !clauses.includes(c))
+    .map(c => `<button data-add="${c}">+ except ${c}</button>`).join("");
+  $("addbar").querySelectorAll("button").forEach(b =>
+    b.addEventListener("click", () => {
+      if (busy) return;
+      clauses.push(b.dataset.add); drawClauses(); reset();
+    }));
+}
+
+function reset() {
+  $("res").innerHTML = "—"; $("log").innerHTML = "—"; $("verdict").innerHTML = "";
+  $("pred").style.display = "none";
+  $("explain").innerHTML = `<p class="note">구성이 바뀌었다. <b>돌리기 전에 예측할 것.</b></p>`;
+}
+
+function label(r) {
+  return `${r.graphDies ? "그래프 죽음" : "끝까지 감"} · failed ${r.failed.length}명 · ` +
+         `버그 ${r.masked.length ? "위장됨" : "구분됨"}`;
+}
+function askPrediction(r) {
+  const right = label(r);
+  const set = new Set([right,
+    `${r.graphDies ? "끝까지 감" : "그래프 죽음"} · failed ${r.failed.length}명 · 버그 ${r.masked.length ? "구분됨" : "위장됨"}`,
+    `끝까지 감 · failed ${AGENTS.length - 1}명 · 버그 위장됨`,
+    `그래프 죽음 · failed 0명 · 버그 구분됨`]);
+  const opts = [...set].slice(0, 3).sort(() => Math.random() - .5);
+  $("pred").style.display = "block";
+  $("streak").textContent = "연속 " + streak;
+  $("predopts").innerHTML = opts.map(o => `<li data-v="${o}">${o}</li>`).join("");
+  $("predopts").querySelectorAll("li").forEach(li =>
+    li.addEventListener("click", () => {
+      if (li.classList.contains("locked")) return;
+      const ok = li.dataset.v === right;
+      $("predopts").querySelectorAll("li").forEach(x => {
+        x.classList.add("locked");
+        if (x.dataset.v === right) x.classList.add("correct");
+        else if (x === li) x.classList.add("wrong");
+      });
+      streak = ok ? streak + 1 : 0;
+      $("streak").textContent = "연속 " + streak + (ok ? "" : "  (끊김)");
+      playback(r);
+    }));
+}
+
+function playback(r) {
+  busy = true;
+  const log = []; let i = 0;
+  function tick() {
+    if (i >= r.rows.length) { finish(r); busy = false; $("runbtn").disabled = false; return; }
+    const row = r.rows[i++];
+    if (!row.thrown) log.push(`<div class="hit">${row.agent} → 정상. Finding 하나</div>`);
+    else if (row.idx < 0)
+      log.push(`<div class="err">${row.agent} → ${row.thrown} 던짐 · ${clauses.length ? "어느 절에도 안 걸림" : "절 없음"} → <b>밖으로 나간다</b></div>`);
+    else {
+      const walked = clauses.slice(0, row.idx).map(c => `${c}✗`).join(" ");
+      log.push(`<div class="warn">${row.agent} → ${row.thrown} 던짐 · ${walked ? walked + " " : ""}<b>${clauses[row.idx]}✓</b> → ${kindOf(clauses[row.idx]) === "exp" ? "예상한 실패" : "버그 의심"} 로 분류</div>`);
+    }
+    $("log").innerHTML = log.join(""); $("log").scrollTop = 1e6;
+    setTimeout(tick, 500);
+  }
+  drawClauses(r);
+  tick();
+}
+
+function finish(r) {
+  $("res").innerHTML = `
+    <div class="row"><span>그래프</span><b>${r.graphDies ? "💥 죽음" : "✅ 끝까지 감"}</b></div>
+    <div class="row"><span>findings</span><b>${r.findings}개</b></div>
+    <div class="row"><span>failed_agents</span><b>[${r.failed.join(", ")}]</b></div>
+    <div class="row"><span>밖으로 나간 예외</span><b>${r.escaped.map(e => e.thrown).join(", ") || "없음"}</b></div>`;
+
+  const v = $("verdict");
+  if (r.graphDies) {
+    const ki = r.escaped.filter(e => e.thrown === "KeyboardInterrupt");
+    v.innerHTML = `<div class="verdict bad"><b>그래프가 죽었다</b>
+      ${r.escaped.map(e => `<code>${e.thrown}</code>`).join(", ")} 이(가) 어느 절에도 안 걸렸다.
+      ${ki.length ? "<br>⚠️ KeyboardInterrupt 는 <b>BaseException 직속</b>이라 except Exception 으로도 안 잡힌다 — 파이썬이 일부러 그렇게 뒀다." : ""}
+      <br>완료 판정 ③("한 노드가 죽어도 나머지로 진행")을 통과하지 못한다.</div>`;
+  } else if (r.masked.length) {
+    const m = r.masked[0];
+    v.innerHTML = `<div class="verdict warn"><b>버그가 위장됐다</b>
+      <code>except ${m.clause}</code> 한 절이 <code>${m.got.join("</code>, <code>")}</code> 를 <b>같이</b> 잡았다.
+      failed_agents 에는 이름만 남으므로 "API 실패"와 "우리 오타"가 <b>구분되지 않는다.</b></div>`;
+  } else {
+    v.innerHTML = `<div class="verdict ok"><b>구분됐다</b>
+      그래프는 끝까지 갔고, 예상한 실패와 버그 의심이 다른 절에 잡혔다.</div>`;
+  }
+  explain(r);
+}
+
+function explain(r) {
+  const b = [];
+  if (r.deadClauses.length) {
+    const i = r.deadClauses[0];
+    b.push(`<p style="color:var(--accent)"><b>도달 불가능한 절이 있다.</b>
+      <code>except ${clauses[i]}</code> 는 위의 <code>except ${clauses.find((c,j)=>j<i && isa(clauses[i],c))}</code> 가
+      이미 다 잡아서 <b>영영 안 돈다.</b> except 는 위에서부터 첫 매치에서 멈추기 때문이다 —
+      <b>좁은 것을 위에, 넓은 것을 아래에</b> 둬야 한다.</p>`);
+  }
+  const leaked = r.escaped.filter(e => isa(e.thrown, "OpenAIError"));
+  if (leaked.length) {
+    b.push(`<p><b>SDK 예외인데 새어나갔다.</b> <code>${leaked[0].thrown}</code> 는
+      <code>${chain(leaked[0].thrown).slice(1).join(" ◂ ")}</code> 라서,
+      <code>APIError</code> 로 잡으면 안 걸린다 — <b>APIError 밑이 아니다.</b>
+      SDK 예외를 전부 덮으려면 뿌리인 <code>OpenAIError</code> 를 써야 한다.</p>`);
+  }
+  if (r.masked.length) {
+    b.push(`<p>실무에서 이게 어떤 모습이냐면 — 게이트는 "security 가 커버 안 됨"만 보고
+      사람에게 넘긴다. <b>맞는 판정이다.</b> 그런데 우리는 코드에 오타가 있다는 걸
+      영영 모른다. 매 리뷰마다 같은 에이전트가 조용히 실패하고, 로그에는
+      "실패한 에이전트" 라고만 남는다.</p>`);
+  }
+  if (!r.graphDies && !r.masked.length && r.failed.length) {
+    b.push(`<p><b>절을 좁은 것 → 넓은 것 순으로 나눈 결과다.</b> 잡는 것과 다루는 것을 분리했다 —
+      둘 다 잡아서 그래프는 살리되, 어느 절에 걸렸는지로 <b>분류가 갈린다.</b>
+      ⚠️ 다만 지금 우리 코드에는 그 분류를 <b>남길 곳이 없다</b>(M3 record_event 를 미뤘다).
+      그래서 M5 에서 할 수 있는 건 "갈라두는 것"까지다.</p>`);
+  }
+  $("explain").innerHTML = b.length ? b.join("") : `<p class="note">특별히 걸린 것 없음.</p>`;
+}
+
+/* ── 프리셋 ─────────────────────────────────────────────────── */
+const P = [
+  { n: "① except Exception 하나만", d: "★ 버그가 위장된다",
+    c: ["Exception"], t: { security:"APITimeoutError", quality:"KeyError", testing:"RateLimitError", docs:"OK" } },
+  { n: "② except APIError 하나만", d: "★★ SDK 예외가 새어나간다",
+    c: ["APIError"], t: { security:"APITimeoutError", quality:"OK", testing:"LengthFinishReasonError", docs:"OK" } },
+  { n: "③ OpenAIError → Exception", d: "둘 다 잡되 분류가 갈린다",
+    c: ["OpenAIError", "Exception"], t: { security:"APITimeoutError", quality:"KeyError", testing:"LengthFinishReasonError", docs:"OK" } },
+  { n: "④ 순서를 뒤집으면", d: "★ 아래 절이 영영 안 돈다",
+    c: ["Exception", "OpenAIError"], t: { security:"APITimeoutError", quality:"KeyError", testing:"LengthFinishReasonError", docs:"OK" } },
+  { n: "⑤ 사람이 Ctrl+C", d: "무엇으로도 안 잡힌다",
+    c: ["OpenAIError", "Exception"], t: { security:"KeyboardInterrupt", quality:"OK", testing:"OK", docs:"OK" } },
+];
+$("presets").innerHTML = P.map((p, i) =>
+  `<button class="preset" data-i="${i}"><b>${p.n}</b><br>
+   <span style="color:var(--muted);font-size:.73rem">${p.d}</span></button>`).join("");
+$("presets").querySelectorAll("button").forEach(b =>
+  b.addEventListener("click", () => {
+    if (busy) return;
+    const p = P[+b.dataset.i];
+    clauses = p.c.slice(); throwOf = { ...p.t };
+    drawAgents(); drawClauses(); reset();
+  }));
+
+$("runbtn").addEventListener("click", () => {
+  if (busy) return;
+  $("runbtn").disabled = true;
+  reset();
+  askPrediction(simulate());
+});
+
+drawAgents(); drawClauses();
+</script>
+</body>
+</html>

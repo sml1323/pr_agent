@@ -90,6 +90,15 @@
   Use for: M5 `langgraph_engine.py`. G6(애그리게이터 계약)의 입력 모양.
   [Lesson 06](lessons/0006-nobody-looked.html) · [Lesson 07](lessons/0007-permission-to-write-together.html)
 
+- [LangGraph — Graph API · Edges 절](https://docs.langchain.com/oss/python/langgraph/graph-api)
+  **"If a node has multiple outgoing edges, all destination nodes execute in parallel
+  during the next superstep."** `add_edge` · `add_conditional_edges` · `START`/`END` · entry point.
+  📌 실측(2026-08-19): 같은 노드 넷을 **배선만** 바꿔 돌린 결과 —
+  팬아웃+팬인 0.30초(aggregate 가 4개 봄) / 체인 1.22초(4개) / **팬인 빠뜨림 0.31초(0개)**.
+  셋 다 에러 없고 최종 state 는 전부 4개다. **결과만 보면 구분이 안 된다.**
+  Use for: M5-3 `_build()` 배선. 조건부 엣지를 언제 쓰나(갈 곳이 실행 시점에 정해질 때만).
+  [Lesson 08](lessons/0008-edges-draw-time.html)
+
 - [LangGraph — Checkpointers](https://docs.langchain.com/oss/python/langgraph/checkpointers)
   **"As each node finishes, its outputs are written as task entries... These per-task writes
   ensure successful nodes' outputs are durable and don't need re-running on resume."**

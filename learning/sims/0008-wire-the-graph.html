@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sim 08 — 배선 작업장</title>
+<style>
+:root{
+  --bg:#fffef9; --fg:#1a1a18; --muted:#6b6b63; --rule:#ddd9cc;
+  --accent:#8a2b1f; --accent-soft:#f5ece9; --code-bg:#f4f2ea;
+  --ok:#2d6a4a; --ok-soft:#e8f2ec; --warn:#8a5a00; --warn-soft:#faf1dd;
+  --dead:#9b988e; --live:#1f6f8a; --live-soft:#e4f0f4;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#16161a; --fg:#e8e6df; --muted:#9b988e; --rule:#33333a;
+    --accent:#e8836f; --accent-soft:#2a1f1d; --code-bg:#1e1e24;
+    --ok:#7bc39a; --ok-soft:#1c2a23; --warn:#d9a441; --warn-soft:#2a2317;
+    --dead:#55555e; --live:#6fb6cf; --live-soft:#17262c;
+  }
+}
+*{box-sizing:border-box}
+html{font-size:16px}
+body{
+  background:var(--bg); color:var(--fg); margin:0 auto; max-width:64rem;
+  padding:2.5rem 1.25rem 6rem; line-height:1.6;
+  font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Apple SD Gothic Neo","Noto Serif KR",serif;
+}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+.eyebrow{font-family:ui-monospace,Menlo,monospace;font-size:.7rem;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--muted);margin:0 0 .5rem}
+h1{font-size:2rem;line-height:1.15;margin:0 0 .6rem;letter-spacing:-.02em}
+.subtitle{color:var(--muted);margin:0 0 2rem;font-size:1.02rem}
+p{margin:0 0 .9rem}
+code{font-family:ui-monospace,Menlo,monospace;font-size:.85em;background:var(--code-bg);
+  padding:.1em .35em;border-radius:3px}
+a{color:var(--accent)}
+.panel{border:1px solid var(--rule);border-radius:8px;padding:1rem 1.1rem;margin:0 0 1.2rem;
+  background:color-mix(in srgb,var(--code-bg) 40%,transparent)}
+.panel h3{margin:0 0 .7rem;font-size:.75rem;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);font-family:ui-monospace,Menlo,monospace;font-weight:600}
+.grid2{display:grid;grid-template-columns:1.25fr 1fr;gap:1.2rem}
+@media(max-width:820px){.grid2{grid-template-columns:1fr}}
+
+svg{width:100%;height:auto;display:block;touch-action:manipulation}
+.nd rect{fill:var(--bg);stroke:var(--rule);stroke-width:1.5;transition:all .18s}
+.nd text{font-family:ui-monospace,Menlo,monospace;font-size:11px;fill:var(--fg);
+  text-anchor:middle;dominant-baseline:middle;pointer-events:none;user-select:none}
+.nd.sel rect{stroke:var(--live);stroke-width:2.5;fill:var(--live-soft)}
+.nd.term rect{fill:var(--code-bg);stroke-dasharray:3 2}
+.nd.run rect{stroke:var(--live);stroke-width:2.5;fill:var(--live-soft)}
+.nd.done rect{stroke:var(--ok);stroke-width:2;fill:var(--ok-soft)}
+.nd.blind rect{stroke:var(--accent);stroke-width:2.5;fill:var(--accent-soft)}
+.nd{cursor:pointer}
+.edge{stroke:var(--muted);stroke-width:1.6;fill:none;marker-end:url(#ar)}
+.edge.hot{stroke:var(--live);stroke-width:2.6}
+.edge.hit{stroke:var(--ok)}
+.badge{font-family:ui-monospace,Menlo,monospace;font-size:9px;fill:var(--muted);text-anchor:middle}
+
+button.preset{background:var(--bg);border:1px solid var(--rule);border-radius:5px;padding:.35rem .7rem;
+  font:inherit;font-size:.79rem;cursor:pointer;color:var(--fg);margin:0 .3rem .3rem 0;text-align:left}
+button.preset:hover{border-color:var(--accent)}
+button.run{background:var(--live);color:#fff;border:none;border-radius:6px;padding:.5rem 1.3rem;
+  font:inherit;font-size:.92rem;cursor:pointer;font-weight:600}
+button.run:disabled{opacity:.45;cursor:default}
+button.ghost{background:none;border:1px solid var(--rule);border-radius:5px;padding:.35rem .8rem;
+  font:inherit;font-size:.8rem;cursor:pointer;color:var(--muted)}
+
+.pred{border:1px solid var(--live);border-radius:8px;padding:.9rem 1rem;margin:0 0 1.2rem;background:var(--live-soft)}
+.pred .q{font-weight:600;margin:0 0 .6rem;font-size:.95rem}
+.pred ol{list-style:none;margin:0;padding:0}
+.pred li{border:1px solid var(--rule);border-radius:5px;padding:.45rem .7rem;margin-bottom:.35rem;
+  cursor:pointer;background:var(--bg);font-size:.86rem;font-family:ui-monospace,Menlo,monospace}
+.pred li:hover{border-color:var(--accent)}
+.pred li.correct{border-color:var(--ok);background:var(--ok-soft)}
+.pred li.wrong{border-color:var(--accent);background:var(--accent-soft)}
+.pred li.locked{cursor:default}
+.streak{float:right;font-family:ui-monospace,Menlo,monospace;font-size:.78rem;color:var(--muted)}
+
+.res{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin-bottom:.7rem}
+.res div{border:1px solid var(--rule);border-radius:6px;padding:.5rem .6rem;background:var(--bg);text-align:center}
+.res .k{font-family:ui-monospace,Menlo,monospace;font-size:.66rem;color:var(--muted);display:block}
+.res .v{font-size:1.25rem;font-weight:600;font-family:ui-monospace,Menlo,monospace}
+.res div.bad{border-color:var(--accent);background:var(--accent-soft)}
+.res div.good{border-color:var(--ok);background:var(--ok-soft)}
+
+.verdict{border-radius:6px;padding:.7rem .9rem;margin:.6rem 0;font-size:.9rem}
+.verdict.ok{background:var(--ok-soft);border-left:3px solid var(--ok)}
+.verdict.bad{background:var(--accent-soft);border-left:3px solid var(--accent)}
+.verdict.warn{background:var(--warn-soft);border-left:3px solid var(--warn)}
+.verdict b{display:block;margin-bottom:.2rem}
+.log{font-family:ui-monospace,Menlo,monospace;font-size:.76rem;line-height:1.75;color:var(--muted);
+  max-height:10rem;overflow-y:auto}
+.log .hit{color:var(--fg)} .log .err{color:var(--accent)}
+.note{font-size:.85rem;color:var(--muted)}
+.hint{font-size:.8rem;color:var(--muted);margin-top:.4rem}
+label.tog{font-size:.82rem;color:var(--muted);cursor:pointer;user-select:none}
+</style>
+</head>
+<body>
+
+<p class="eyebrow">Sim 08 · Lesson 08 · M5-3</p>
+<h1>배선 작업장</h1>
+<p class="subtitle">노드를 클릭해서 엣지를 <strong>직접 그어라.</strong> 그다음 층 수·시간·애그리게이터가 볼 개수를 예측할 것.</p>
+
+<div class="pred" id="pred" style="display:none">
+  <span class="streak" id="streak">연속 0</span>
+  <p class="q">이 배선으로 돌리면?</p>
+  <ol id="predopts"></ol>
+</div>
+
+<div class="grid2">
+  <div>
+    <div class="panel">
+      <h3>그래프 — 노드 둘을 차례로 클릭하면 엣지가 생긴다 (다시 누르면 삭제)</h3>
+      <svg id="cv" viewBox="0 0 680 400">
+        <defs>
+          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/>
+          </marker>
+        </defs>
+        <g id="edges"></g>
+        <g id="nodes"></g>
+      </svg>
+      <p class="hint" id="hint">각 스페셜리스트는 0.3초 걸린다. aggregate 와 START·END 는 0초.</p>
+      <p style="margin:.7rem 0 0">
+        <button class="run" id="runbtn">▶ 돌린다</button>
+        <button class="ghost" id="clearbtn">엣지 전부 지우기</button>
+        <label class="tog" style="margin-left:.6rem">
+          <input type="checkbox" id="condchk"> 조건부 진입 (문서 변경 있을 때만 docs)
+        </label>
+      </p>
+    </div>
+
+    <div class="panel">
+      <h3>프리셋</h3>
+      <div id="presets"></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="panel">
+      <h3>결과</h3>
+      <div class="res">
+        <div id="r-steps"><span class="k">superstep</span><span class="v">—</span></div>
+        <div id="r-time"><span class="k">총 시간</span><span class="v">—</span></div>
+        <div id="r-saw"><span class="k">agg 가 본 것</span><span class="v">—</span></div>
+      </div>
+      <div class="note" id="finalnote">—</div>
+      <div id="verdict"></div>
+    </div>
+
+    <div class="panel">
+      <h3>superstep 로그</h3>
+      <div class="log" id="log">—</div>
+    </div>
+  </div>
+</div>
+
+<div class="panel" style="margin-top:1.2rem">
+  <h3>해설</h3>
+  <div id="explain"><p class="note">한 판 돌리면 여기에 지금 본 것의 근거가 뜬다.</p></div>
+</div>
+
+<p class="note" style="margin-top:1.5rem">
+돌아가기 → <a href="../lessons/0008-edges-draw-time.html">Lesson 08</a> ·
+<a href="../lessons/0007-permission-to-write-together.html">Lesson 07</a> ·
+그다음 <code>NOTEBOOK.md</code> 에 내 말로 3줄
+</p>
+
+<script>
+/* ─────────────────────────────────────────────────────────────
+   엔진 — 하드코딩 없음. LangGraph 의 규칙을 그대로 굴린다.
+
+   · 노드는 자기로 **들어오는 엣지의 출발점이 전부 완료**되면 실행된다 (배리어)
+   · 한 라운드에 실행 가능한 노드 전부가 같은 superstep 이다
+   · 그 라운드의 소요 시간 = 가장 오래 걸리는 노드 (동시에 도니까)
+   · 노드가 보는 findings 는 **자기 라운드가 시작될 때까지 커밋된 것**뿐이다
+   ───────────────────────────────────────────────────────────── */
+const SPECS = ["security", "quality", "testing", "docs"];
+const DUR = { security: .3, quality: .3, testing: .3, docs: .3, aggregate: 0 };
+const POS = {
+  START:     [60, 200], security: [250, 70], quality: [250, 155],
+  testing:   [250, 240], docs:    [250, 325], aggregate: [450, 200], END: [610, 200],
+};
+const NODES = Object.keys(POS);
+
+let edges = [];          // [[from,to], ...]
+let sel = null, busy = false, streak = 0;
+
+function incoming(n) { return edges.filter(e => e[1] === n).map(e => e[0]); }
+
+function simulate(conditional, hasDocChange) {
+  // 조건부 진입: START 에서 docs 로 가는 엣지가 실행 시점에 켜지고 꺼진다
+  const live = edges.filter(([a, b]) =>
+    !(conditional && a === "START" && b === "docs" && !hasDocChange));
+  const inc = n => live.filter(e => e[1] === n).map(e => e[0]);
+
+  const done = new Set(["START"]);
+  const steps = [];
+  let t = 0, aggSaw = null, committed = 0;
+
+  for (let guard = 0; guard < 20; guard++) {
+    const ready = NODES.filter(n =>
+      n !== "START" && !done.has(n) && inc(n).length > 0 && inc(n).every(s => done.has(s)));
+    if (!ready.length) break;
+
+    // 이 라운드가 시작될 때 커밋되어 있던 findings 수
+    if (ready.includes("aggregate")) aggSaw = committed;
+
+    const dur = Math.max(...ready.map(n => DUR[n] ?? 0));
+    t += dur;
+    // END 는 노드가 아니라 종료 표식이다 — superstep 으로 세지 않는다
+    const visible = ready.filter(n => n !== "END");
+    if (visible.length) steps.push({ nodes: visible, dur, seenBefore: committed });
+    ready.forEach(n => { done.add(n); if (SPECS.includes(n)) committed += 1; });
+  }
+  const ranSpecs = SPECS.filter(n => done.has(n));
+  return {
+    steps, time: t, aggSaw, aggRan: done.has("aggregate"),
+    reachedEnd: done.has("END"), finalFound: ranSpecs.length, ranSpecs,
+  };
+}
+
+/* ── 그리기 ─────────────────────────────────────────────────── */
+const $ = id => document.getElementById(id);
+const W = 96, H = 34;
+
+function drawNodes(stateMap) {
+  $("nodes").innerHTML = NODES.map(n => {
+    const [x, y] = POS[n];
+    const term = (n === "START" || n === "END");
+    const st = stateMap && stateMap[n] ? " " + stateMap[n] : "";
+    const cls = "nd" + (term ? " term" : "") + (sel === n ? " sel" : "") + st;
+    const w = term ? 62 : W;
+    return `<g class="${cls}" data-n="${n}">
+      <rect x="${x - w / 2}" y="${y - H / 2}" width="${w}" height="${H}" rx="6"/>
+      <text x="${x}" y="${y}">${n}</text>
+    </g>`;
+  }).join("");
+  $("nodes").querySelectorAll(".nd").forEach(g =>
+    g.addEventListener("click", () => onNode(g.dataset.n)));
+}
+
+function drawEdges(hot) {
+  $("edges").innerHTML = edges.map(([a, b], i) => {
+    const [x1, y1] = POS[a], [x2, y2] = POS[b];
+    const wA = (a === "START" || a === "END") ? 31 : W / 2;
+    const wB = (b === "START" || b === "END") ? 31 : W / 2;
+    const sx = x1 + wA, ex = x2 - wB;
+    const mx = (sx + ex) / 2;
+    const cls = "edge" + (hot && hot.has(i) ? " hot" : "");
+    return `<path class="${cls}" d="M${sx},${y1} C${mx},${y1} ${mx},${y2} ${ex},${y2}"/>`;
+  }).join("");
+}
+
+function onNode(n) {
+  if (busy) return;
+  if (sel === null) { sel = n; }
+  else if (sel === n) { sel = null; }
+  else {
+    if (n === "START" || sel === "END") { sel = n; drawNodes(); return; }  // 방향 고정
+    const i = edges.findIndex(e => e[0] === sel && e[1] === n);
+    if (i >= 0) edges.splice(i, 1); else edges.push([sel, n]);
+    sel = null;
+    reset();
+  }
+  drawNodes(); drawEdges();
+}
+
+function reset() {
+  $("verdict").innerHTML = ""; $("log").innerHTML = "—"; $("finalnote").textContent = "—";
+  ["r-steps", "r-time", "r-saw"].forEach(id => {
+    $(id).querySelector(".v").textContent = "—";
+    $(id).className = "";
+  });
+  $("pred").style.display = "none";
+  $("explain").innerHTML = `<p class="note">배선이 바뀌었다. <b>돌리기 전에 예측할 것.</b></p>`;
+}
+
+/* ── 예측 ───────────────────────────────────────────────────── */
+function label(r) {
+  return `${r.steps.length}층 · ${r.time.toFixed(2)}초 · aggregate ${r.aggRan ? r.aggSaw + "개" : "안 돎"}`;
+}
+function askPrediction(r) {
+  const right = label(r);
+  const alts = new Set([right]);
+  const mk = (s, t, a) => `${s}층 · ${t.toFixed(2)}초 · aggregate ${a}개`;
+  const cands = [
+    mk(r.steps.length + 3, r.time + .9, r.finalFound),
+    mk(Math.max(1, r.steps.length - 1), r.time, 0),
+    mk(r.steps.length, r.time, r.finalFound === r.aggSaw ? 0 : r.finalFound),
+    mk(2, .30, 4), mk(5, 1.20, 4), mk(1, .30, 0),
+  ];
+  for (const c of cands) { if (alts.size >= 3) break; alts.add(c); }
+  const opts = [...alts].sort(() => Math.random() - .5);
+
+  $("pred").style.display = "block";
+  $("streak").textContent = "연속 " + streak;
+  $("predopts").innerHTML = opts.map(o => `<li data-v="${o}">${o}</li>`).join("");
+  $("predopts").querySelectorAll("li").forEach(li =>
+    li.addEventListener("click", () => {
+      if (li.classList.contains("locked")) return;
+      const ok = li.dataset.v === right;
+      $("predopts").querySelectorAll("li").forEach(x => {
+        x.classList.add("locked");
+        if (x.dataset.v === right) x.classList.add("correct");
+        else if (x === li) x.classList.add("wrong");
+      });
+      streak = ok ? streak + 1 : 0;
+      $("streak").textContent = "연속 " + streak + (ok ? "" : "  (끊김)");
+      playback(r);
+    }));
+}
+
+/* ── 재생 ───────────────────────────────────────────────────── */
+function playback(r) {
+  busy = true;
+  const stateMap = {}; const log = [];
+  let i = 0;
+  function tick() {
+    if (i >= r.steps.length) { finish(r, log); return; }
+    const st = r.steps[i];
+    st.nodes.forEach(n => {
+      stateMap[n] = (n === "aggregate" && r.aggSaw === 0 && r.finalFound > 0) ? "blind" : "run";
+    });
+    drawNodes(stateMap);
+    const hot = new Set();
+    edges.forEach((e, k) => { if (st.nodes.includes(e[1])) hot.add(k); });
+    drawEdges(hot);
+    const names = st.nodes.join(", ");
+    const agg = st.nodes.includes("aggregate")
+      ? `  ← aggregate 가 이 순간 본 findings: <b>${st.seenBefore}개</b>` : "";
+    log.push(`<div class="${agg ? "err" : "hit"}">superstep ${i + 1} · ${names} (${st.dur.toFixed(2)}초)${agg}</div>`);
+    $("log").innerHTML = log.join(""); $("log").scrollTop = 1e6;
+    i++;
+    setTimeout(() => {
+      st.nodes.forEach(n => { if (stateMap[n] === "run") stateMap[n] = "done"; });
+      drawNodes(stateMap); tick();
+    }, 620);
+  }
+  tick();
+}
+
+function finish(r, log) {
+  const set = (id, v, cls) => {
+    $(id).querySelector(".v").textContent = v;
+    $(id).className = cls || "";
+  };
+  set("r-steps", r.steps.length + "층");
+  set("r-time", r.time.toFixed(2) + "초", r.time > .5 ? "bad" : "good");
+  set("r-saw", r.aggRan ? r.aggSaw + "개" : "안 돎",
+      (!r.aggRan || r.aggSaw < r.finalFound) ? "bad" : "good");
+  $("finalnote").innerHTML =
+    `최종 <code>findings</code>: <b>${r.finalFound}개</b> · END 도달 ${r.reachedEnd ? "✅" : "❌"}`;
+
+  const v = $("verdict"); const bits = [];
+  if (!r.aggRan) {
+    v.innerHTML = `<div class="verdict bad"><b>aggregate 가 안 돌았다</b>
+      들어오는 엣지가 없거나, 출발점 중 하나가 영영 안 끝난다.</div>`;
+  } else if (r.aggSaw < r.finalFound) {
+    v.innerHTML = `<div class="verdict bad"><b>빠른데 틀리다</b>
+      최종 findings 는 ${r.finalFound}개인데 aggregate 는 <b>${r.aggSaw}개</b>만 보고 판정했다.
+      끝나고 결과만 보면 정상처럼 보인다 — 이게 제일 안 들키는 버그다.</div>`;
+  } else if (r.steps.length > 2) {
+    v.innerHTML = `<div class="verdict warn"><b>느린데 맞다</b>
+      결과는 정확하지만 superstep 이 ${r.steps.length}층이라 ${r.time.toFixed(2)}초 걸렸다.
+      팬아웃이면 0.30초다. 에러는 안 난다 — 아무도 안 알려준다.</div>`;
+  } else {
+    v.innerHTML = `<div class="verdict ok"><b>정답 배선</b>
+      넷이 한 층에서 동시에 돌고(0.30초), aggregate 가 넷을 다 보고 시작했다.</div>`;
+  }
+  explain(r);
+  busy = false; $("runbtn").disabled = false;
+}
+
+function explain(r) {
+  const b = [];
+  b.push(`<p><b>superstep ${r.steps.length}층.</b> 층은 그림이 아니라 <b>엣지가</b> 긋는다 —
+    "들어오는 엣지의 출발점이 전부 끝나야 실행"이라는 규칙 하나가 전부다.</p>`);
+  if (r.time > .5) {
+    b.push(`<p>스페셜리스트가 <b>${r.steps.filter(s => s.nodes.some(n => SPECS.includes(n))).length}개 층</b>에
+      흩어져 있다. 한 층에 모으면 <code>${(0.3).toFixed(2)}초</code>인데
+      지금은 <code>${r.time.toFixed(2)}초</code>다. 에이전트가 늘수록 격차도 커진다.</p>`);
+  }
+  if (r.aggRan && r.aggSaw < r.finalFound) {
+    b.push(`<p><b>aggregate 가 ${r.aggSaw}개를 봤다.</b> 스페셜리스트에서 aggregate 로 들어가는
+      엣지가 없으면 기다릴 이유가 없어서 <b>먼저 돌아버린다.</b>
+      그런데 최종 state 는 ${r.finalFound}개다 — 나중에 스페셜리스트들이 채우니까.
+      <b>결과만 검사하는 테스트로는 절대 못 잡는다.</b></p>`);
+    b.push(`<p>우리 시스템으로 옮기면: 게이트가 "지적 0개"로 읽고 <b>자동 통과</b>시킨다.
+      <a href="../lessons/0006-nobody-looked.html">Lesson 06</a> 의
+      "아무 문제 없음 vs 아무도 안 봄"이 배선으로도 생긴다.</p>`);
+  }
+  const wired = edges.filter(e => SPECS.includes(e[0]) && e[1] === "aggregate").length;
+  if (r.aggRan && wired > 0 && wired < 4 && r.aggSaw === r.finalFound) {
+    b.push(`<p><b>엣지를 ${wired}개만 걸었는데 ${r.aggSaw}개를 다 봤다.</b>
+      엣지는 <b>순서</b>를 정하지 <b>값을 나르지</b> 않는다 — 값은 채널(state)에 있다.
+      넷이 이미 같은 층이라 그 층이 끝나는 순간 넷 다 커밋되고,
+      aggregate 는 다음 층이라 전부 본다.</p>
+      <p>그래서 중요한 건 "엣지를 몇 개 걸었나"가 아니라
+      <b>"aggregate 가 스페셜리스트와 같은 층인가, 다음 층인가"</b>다.
+      프리셋 ③ 과 비교해보면 그 차이 하나뿐이다.</p>`);
+  }
+  if ($("condchk").checked) {
+    b.push(`<p><b>조건부 진입.</b> 같은 그래프인데 실행 때 <code>docs</code> 가 돌기도 안 돌기도 한다 —
+      네 upbit 코드의 <code>route_by_anomaly_type</code> 이 이 모양이다.
+      <b>조건이 있을 때만</b> 이게 필요하다. 우리 PR 리뷰는 넷이 항상 돌아서 필요 없다.</p>`);
+  }
+  $("explain").innerHTML = b.join("");
+}
+
+/* ── 프리셋 ─────────────────────────────────────────────────── */
+const P = [
+  { n: "① 팬아웃 + 팬인", d: "정답 배선", e: () =>
+      [...SPECS.map(s => ["START", s]), ...SPECS.map(s => [s, "aggregate"]), ["aggregate", "END"]] },
+  { n: "② 체인 (직렬)", d: "★ 느린데 맞다", e: () =>
+      [["START", SPECS[0]], ...SPECS.slice(0, 3).map((s, i) => [s, SPECS[i + 1]]),
+       [SPECS[3], "aggregate"], ["aggregate", "END"]] },
+  { n: "③ 팬인 빠뜨림", d: "★★ 빠른데 틀리다", e: () =>
+      [...SPECS.map(s => ["START", s]), ...SPECS.map(s => [s, "END"]),
+       ["START", "aggregate"], ["aggregate", "END"]] },
+  { n: "④ 절반만 팬인", d: "★ 둘만 이었는데 4개를 본다", e: () =>
+      [...SPECS.map(s => ["START", s]), ...SPECS.slice(0, 2).map(s => [s, "aggregate"]),
+       ...SPECS.slice(2).map(s => [s, "END"]), ["aggregate", "END"]] },
+  { n: "⑤ 조건부 진입", d: "docs 를 실행 때 정한다", e: () =>
+      [...SPECS.map(s => ["START", s]), ...SPECS.map(s => [s, "aggregate"]), ["aggregate", "END"]],
+    cond: true },
+];
+$("presets").innerHTML = P.map((p, i) =>
+  `<button class="preset" data-i="${i}"><b>${p.n}</b><br>
+   <span style="color:var(--muted);font-size:.74rem">${p.d}</span></button>`).join("");
+$("presets").querySelectorAll("button").forEach(b =>
+  b.addEventListener("click", () => {
+    if (busy) return;
+    const p = P[+b.dataset.i];
+    edges = p.e(); sel = null;
+    $("condchk").checked = !!p.cond;
+    drawNodes(); drawEdges(); reset();
+  }));
+
+$("clearbtn").addEventListener("click", () => {
+  if (busy) return;
+  edges = []; sel = null; drawNodes(); drawEdges(); reset();
+});
+$("condchk").addEventListener("change", reset);
+$("runbtn").addEventListener("click", () => {
+  if (busy || !edges.length) return;
+  $("runbtn").disabled = true;
+  reset();
+  const r = simulate($("condchk").checked, false);   // 문서 변경 없음 → docs 안 돎
+  askPrediction(r);
+});
+
+drawNodes(); drawEdges();
+P[0] && (() => { edges = P[0].e(); drawNodes(); drawEdges(); })();
+</script>
+</body>
+</html>
