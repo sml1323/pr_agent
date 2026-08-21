@@ -27,9 +27,7 @@ LangGraph 의 노드는 값을 "리턴"하는 게 아니라 **이 dict 를 덧�
 from __future__ import annotations
 
 import operator
-from typing import Annotated, TypedDict
-
-from backend.agents.schema import Finding
+from typing import Annotated, Any, TypedDict
 
 
 class ReviewState(TypedDict):
@@ -70,5 +68,16 @@ class ReviewState(TypedDict):
     # ─────────────────────────────────────────────────────────────
     review_key: str
     diff: str
-    findings: Annotated[list[Finding], operator.add]  # security·quality·testing·docs 가 함께 쌓는다
+    #
+    # 결정 4 · `findings` 는 **dict** 다 — Pydantic 객체가 아니다 (2026-08-21, M5-6)
+    #   · 노드는 `Finding` 을 만들고 **`.model_dump()` 로 눕혀서** 담는다.
+    #     이유는 검증이 아니라 **저장**이다 — 체크포인터가 이 채널을 통째로 직렬화한다.
+    #   · Pydantic 객체를 그대로 두면 저장 포맷이 우리 클래스에 묶인다:
+    #     `Finding` 에 필드가 하나 늘면 **저장된 체크포인트를 못 읽는다.**
+    #     그리고 M6 에서 `Finding` 은 **확실히 바뀐다**(더미 → 진짜 LLM 응답).
+    #   · ⚠️ 검증이 사라지는 게 아니다. `Finding(...)` 생성자가 여전히 INV-3 을 강제하고,
+    #     `.model_dump()` 는 **검증을 통과한 뒤에** 부른다. 검증은 입구에서, 저장은 눕혀서.
+    #   · 004 `findings` 표에서 JSON 덩어리 대신 컬럼으로 눕힌 것과 같은 가족이다 —
+    #     **저장된 것은 못 고치니까, 고칠 일이 생기는 모양으로 저장하지 않는다.**
+    findings: Annotated[list[dict[str, Any]], operator.add]  # 넷이 함께 쌓는다
     failed_agents: Annotated[list[str], operator.add]  # 넷이 각자 자기 실패를 보고한다

@@ -106,6 +106,76 @@
   Use for: M5-6 체크포인터 선택(Sqlite / Postgres)의 근거. `resume()` 이 INV-2 를 지키는 메커니즘.
   [Lesson 07](lessons/0007-permission-to-write-together.html)
 
+- [Python — `concurrent.futures`](https://docs.python.org/3/library/concurrent.futures.html)
+  **"Attempt to cancel the call. If the call is currently being executed or finished running
+  and cannot be cancelled then the method will return `False`."** (`Future.cancel`) ·
+  **"Regardless of the value of *wait*, the entire Python program will not exit until all
+  pending futures are done executing."** (`Executor.shutdown`)
+  📌 실측(2026-08-20): `result(timeout=0.5)` 가 0.50초에 `TimeoutError` 를 냈지만
+  그 함수는 2초를 다 채우고 마지막 줄까지 실행됐다. `cancel()` → `False`.
+  Use for: M5-5. **타임아웃은 기다림에 거는 것이지 실행에 거는 것이 아니다.**
+  [Lesson 10](lessons/0010-timeout-is-not-cancel.html)
+
+- `langgraph.types.TimeoutPolicy` 독스트링 + `langgraph/graph/state.py::add_node` (설치된 패키지)
+  **"Timeouts rely on asyncio cancellation. If your node uses synchronous `time.sleep()`
+  or other CPU-bound work that blocks the GIL, the timeout will not be fired until after
+  the event loop has been released."** ·
+  **"Timeouts are supported only for async nodes; sync nodes cannot be safely cancelled in-process."**
+  📌 실측(2026-08-20): 동기 노드에 `timeout=0.5` → **compile 에서 `ValueError`**.
+  async 노드 + `await asyncio.sleep(3)` → 0.51초 `NodeTimeoutError`,
+  같은 노드 안을 `time.sleep(3)` 으로 바꾸면 → **3.02초에 그냥 성공**(경고 없음).
+  Use for: M5-5 에서 타임아웃을 **노드 밖이 아니라 노드 안**에 두는 근거.
+  [Lesson 10](lessons/0010-timeout-is-not-cancel.html)
+
+- `openai/_constants.py` (설치된 SDK 2.49.0)
+  `DEFAULT_TIMEOUT = httpx.Timeout(timeout=600, connect=5.0)` · `DEFAULT_MAX_RETRIES = 2`
+  예외 족보: `APITimeoutError ◂ APIConnectionError ◂ APIError ◂ OpenAIError`.
+  📌 **600초 = 10분은 사실상 "타임아웃 없음"이다.** 그리고 우리가 안 써도 재시도가 이미 2번 돈다.
+  Use for: M6 에서 `_call_agent` 에 꽂을 값. M5-4 의 `except OpenAIError` 가 타임아웃도 받는다는 근거.
+  [Lesson 10](lessons/0010-timeout-is-not-cancel.html)
+
+
+- `langgraph/checkpoint/serde/_msgpack.py` 모듈 독스트링 + `SAFE_MSGPACK_TYPES` (설치된 패키지)
+  **"Msgpack deserialization safety controls. Set `LANGGRAPH_STRICT_MSGPACK=true` to restrict
+  checkpoint deserialization to the types listed in `SAFE_MSGPACK_TYPES`. Without this,
+  any Python callable stored in checkpoint data will be imported and executed on load."**
+  📌 그래서 `Deserializing unregistered type ... Finding` 경고는 **정리 잔소리가 아니라 보안 경계**다 —
+  체크포인트를 읽는다는 건 거기 적힌 타입을 import 한다는 뜻이다. 기본 허용 목록에는
+  `datetime`·`UUID`·`Decimal`·`Path` 같은 것만 있고 우리 클래스는 없다.
+  Use for: M5-6 결정 ③ (`Finding` 을 그대로 저장할지 dict 로 눕힐지).
+  [Lesson 11](lessons/0011-checkpoint-is-a-resume-contract.html)
+
+- `langgraph.checkpoint.memory.InMemorySaver` 독스트링 (설치된 패키지)
+  **"Only use `InMemorySaver` for debugging or testing purposes. For production use cases
+  we recommend installing `langgraph-checkpoint-postgres` and using `PostgresSaver`."**
+  📌 실측(2026-08-21): 프로세스 A 에서 `run()` → `done · findings 4`,
+  **프로세스 B 에서 같은 `thread_id` 로 `get_state()` → `not_started · findings 0`.**
+  그리고 `langgraph.checkpoint.sqlite`/`.postgres` 는 **설치돼 있지 않다**(별도 패키지) —
+  이 결정은 `uv add` 를 부른다.
+  Use for: M5-6 결정 ① (Memory / Sqlite / Postgres). 완료 판정 ②를 못 넘는 이유.
+  [Lesson 11](lessons/0011-checkpoint-is-a-resume-contract.html)
+
+
+- `subprocess.Popen.send_signal` / `.kill` / `.__del__` (CPython 3.13.5 stdlib)
+  **"Skip signalling a process that we know has already died."** (`send_signal`, `subprocess.py:2192`) ·
+  **"Not reading subprocess exit status creates a zombie process which is only destroyed
+  at the parent python process exit"** (`__del__`, `subprocess.py:1137`)
+  📌 실측(2026-08-21): `p.kill()` → `returncode=-9`(SIGKILL). 이미 끝난 프로세스에 `kill()` 하면
+  **예외도 없고 아무 일도 안 일어난다** → 데모가 "죽였다"고 말하려면 `poll() is None` 을 같이 찍어야 한다.
+  `signal.signal(SIGKILL, ...)` → `OSError: [Errno 22]` — **가로챌 수 없다**(그래서 진짜 시험이 된다).
+  Use for: M5-7 `demo_m5.py` 의 완료 판정 ②. [reference/kill9-and-resume.html](reference/kill9-and-resume.html)
+
+- **자식 프로세스 시작 오버헤드** (실측, 이 레포 기준)
+  📌 실측(2026-08-21, 3회): 자식 파이썬 시작 **0.42초**, 그중 `import langgraph` + 우리 모듈이 **0.34초**.
+  우리 그래프 전체가 0.81초이므로 **오버헤드가 그래프 길이의 절반이다.**
+  ⚠️ `Popen` 직후 `sleep(0.5)` 는 "그래프 0.5초 지점"이 아니라 **0.08초 지점**이고,
+  그때는 체크포인트가 없어 `get_state()` 가 `not_started` 를 준다 —
+  **"죽인 것"과 "시작도 안 한 것"이 결과만으로 구분 안 된다.**
+  → 자식이 `READY` 를 찍고 부모가 그걸 읽은 뒤 시계를 잰다.
+  Use for: M5-7 데모 · 앞으로 프로세스를 나누는 모든 실측.
+  [reference/kill9-and-resume.html](reference/kill9-and-resume.html)
+
+
 ## Wisdom (Communities)
 
 - [r/LocalLLaMA](https://reddit.com/r/LocalLLaMA) · [r/LLMDevs](https://reddit.com/r/LLMDevs)
@@ -138,3 +208,14 @@
   [Lesson 06](lessons/0006-nobody-looked.html)
 
 - **confidence 캘리브레이션** — LLM이 뱉는 확신도가 실제 정확도와 맞는지 재는 방법. M11이 범위 밖이라 지금은 공백으로 둔다.
+
+- **정상 LLM 응답의 지연 분포** — M5-5 타임아웃 값을 정하려면 "느린 정상 호출이 몇 초까지 가나"가
+  필요한데, 더미 노드의 `0.3~0.8초` 는 우리가 만든 숫자지 관측한 숫자가 아니다.
+  **M6 에서 진짜 호출을 재고 다시 정한다.** 지금 고르는 값은 잠정치다.
+  [Lesson 10](lessons/0010-timeout-is-not-cancel.html)
+
+- **`durability="sync"` 가 언제 결과를 바꾸나** — 0.5·0.7초 kill 에서 `async`(기본)와 결과가 같았다.
+  우리 그래프가 superstep 2개짜리로 짧아서일 수 있다. **긴 그래프에서 재검증 필요**.
+  1차 출처는 확보: `Durability = Literal["sync","async","exit"]` · `'async'`는
+  *"persisted asynchronously while the next step executes"* (`langgraph/types.py:89`).
+  [reference/kill9-and-resume.html](reference/kill9-and-resume.html)

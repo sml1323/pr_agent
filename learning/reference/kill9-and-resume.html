@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference — kill -9 후 재개</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Reference · recon · 2026-08-21 · CPython 3.13.5 · langgraph 1.2.11</p>
+<h1>kill -9 후 <em>재개</em></h1>
+<p class="subtitle">데모에서 워커를 진짜로 죽이고 이어붙이려면 무엇을 타이핑하나.</p>
+
+<p class="callout">
+<span class="label">이 문서가 답한 것</span>
+M5 완료 판정 ②(<em>"kill -9 로 죽이고 다시 띄우면 이미 끝난 에이전트를 다시 안 부른다"</em>)를
+<strong>실제 프로세스로</strong> 증명하려면 무엇이 필요한가.<br>
+실행 근거: <code>scratch/recon_kill9_resume.py</code> — 돌리면 아래 숫자가 재현된다.
+</p>
+
+<h2>기본 호출 — 복붙 가능</h2>
+
+<pre><code><span class="c-comment"># 부모 — 워커를 띄우고, 그래프가 시작된 뒤 0.5초에 죽인다</span>
+worker = subprocess.Popen([sys.executable, WORKER, "--child"],
+                          stdout=subprocess.PIPE, text=True)
+worker.stdout.readline()          <span class="c-good"># "READY" 를 기다린다 ← 함정 ④</span>
+time.sleep(0.5)
+alive = worker.poll() is None     <span class="c-good"># 정말 살아 있었나 ← 함정 ②</span>
+worker.kill()                     <span class="c-comment"># = SIGKILL</span>
+rc = worker.wait()                <span class="c-good"># 좀비 방지 ← 함정 ③</span>
+
+<span class="c-comment"># 자식 — 그래프를 돌린다</span>
+with SqliteSaver.from_conn_string(SQLITE) as saver:
+    engine = LangGraphEngine(checkpointer=saver)
+    print("READY", flush=True)    <span class="c-comment"># import·조립이 끝난 시점</span>
+    engine.run(KEY, diff)
+
+<span class="c-comment"># 다시 부모 — 이어서 돌린다</span>
+before = engine.get_state(KEY)
+len(before.get("findings", []))   <span class="c-bad"># .get() 이다 ← 함정 ⑤</span>
+engine.resume(KEY)</code></pre>
+
+<h2>시그니처 · 기본값</h2>
+
+<div class="table-scroll">
+<table>
+<thead><tr><th>대상</th><th>실물</th><th>출처</th></tr></thead>
+<tbody>
+<tr><td><code>Popen.kill()</code></td><td><code>self.send_signal(signal.SIGKILL)</code> (POSIX)</td><td>소스 <code>subprocess.py:2229</code></td></tr>
+<tr><td><code>Popen.terminate()</code></td><td><code>self.send_signal(signal.SIGTERM)</code></td><td>소스 <code>subprocess.py:2224</code></td></tr>
+<tr><td><code>Popen.wait(timeout=None)</code></td><td>기본 무한 대기</td><td>시그니처</td></tr>
+<tr><td><code>Popen(..., start_new_session=False)</code></td><td>기본은 <strong>같은 프로세스 그룹</strong></td><td>시그니처</td></tr>
+<tr><td>graph <code>durability</code></td><td>기본 <code>"async"</code> — <em>"persisted asynchronously while the next step executes"</em></td><td><code>langgraph/types.py:89</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>함정</h2>
+
+<h3>① <code>SIGKILL</code> 은 가로챌 수 없다 — 그래서 이게 진짜 시험이다</h3>
+<pre><code>signal.signal(signal.SIGKILL, handler)
+<span class="c-bad">→ OSError: [Errno 22] Invalid argument</span></code></pre>
+<p>
+📌 실측. <strong>자식이 "정리하고 죽는" 코드를 돌릴 기회가 없다.</strong>
+그래서 살아남는 건 <strong>죽기 전에 이미 디스크에 착지한 것</strong>뿐이고,
+그게 <code>pending_writes</code> 가 하는 일이다. <code>SIGTERM</code>(<code>terminate()</code>)으로 대신하면
+자식이 핸들러로 정리할 수 있어 <strong>시험이 헐거워진다.</strong>
+</p>
+
+<h3>② 이미 끝난 프로세스를 <code>kill()</code> 하면 조용히 아무 일도 안 난다</h3>
+<pre><code>p.wait()      <span class="c-comment"># 이미 끝났다</span>
+p.kill()      <span class="c-bad"># 예외 없음. 아무 일도 안 일어남</span></code></pre>
+<p class="callout">
+<span class="label">소스</span>
+<em>"Skip signalling a process that we know has already died."</em> —
+<code>send_signal</code> 이 <code>poll()</code> 후 <code>returncode is not None</code> 이면 <strong>그냥 return</strong> 하고,
+그 뒤 <code>os.kill</code> 의 <code>ProcessLookupError</code> 도 <code>pass</code> 로 삼킨다
+(<code>subprocess.py:2192-2222</code>, bpo-40550).
+</p>
+<p>
+⚠️ 그래서 <strong>데모가 "0.5초에 죽였다"고 말해도 실제로는 안 죽였을 수 있다.</strong>
+<code>worker.poll() is None</code> 을 <strong>kill 직전에</strong> 찍어서 근거를 남길 것.
+</p>
+
+<h3>③ <code>wait()</code> 를 안 부르면 좀비가 남는다</h3>
+<p class="callout">
+<span class="label">소스</span>
+<em>"Not reading subprocess exit status creates a zombie process which is only
+destroyed at the parent python process exit"</em> — <code>Popen.__del__</code> (<code>subprocess.py:1137</code>).
+<code>ResourceWarning</code> 을 띄우지만 <strong>기본 설정에서는 안 보인다.</strong>
+</p>
+
+<h3>④ 부모의 <code>sleep(0.5)</code> 는 "그래프 0.5초 지점"이 아니다 ⚠️ <strong>이게 제일 크다</strong></h3>
+<div class="table-scroll">
+<table>
+<thead><tr><th></th><th>실측 (3회)</th></tr></thead>
+<tbody>
+<tr><td>자식 프로세스 전체 시작</td><td><strong>0.42초</strong></td></tr>
+<tr><td>└ 그중 <code>import langgraph</code> + 우리 모듈</td><td><strong>0.34초</strong></td></tr>
+<tr><td>우리 그래프 전체 실행</td><td>0.81초</td></tr>
+</tbody>
+</table>
+</div>
+<p>
+📌 <strong>시작 오버헤드가 그래프 길이의 절반이다.</strong> <code>Popen</code> 직후 <code>sleep(0.5)</code> 하면
+그래프는 겨우 <strong>0.08초</strong> 지점이고, 그때는 체크포인트가 하나도 없어
+<code>get_state()</code> 가 <code>not_started</code> 를 돌려준다 — <strong>죽인 게 아니라 시작도 안 한 것</strong>인데
+결과만 보면 구분이 안 된다.
+</p>
+<p>
+해법: 자식이 <strong>조립을 끝낸 뒤 <code>READY</code> 를 찍고</strong>, 부모가 그걸 읽고 나서 시계를 잰다.
+</p>
+
+<h3>⑤ <code>get_state()</code> 가 약속한 키를 항상 주지 않는다</h3>
+<p>
+mid-superstep 에 죽으면 <code>snapshot.values</code> 가 <strong>통째로 비어 있을 수 있다.</strong>
+그러면 우리 <code>get_state()</code> 는 <code>**snapshot.values</code> 를 펼치므로
+<code>findings</code> 키가 <strong>아예 없다</strong> → 호출부의 <code>s["findings"]</code> 가 <code>KeyError</code>.
+</p>
+<pre><code>kill 아주 이른 시점  → get_state() 키 = ['next_nodes', 'status']              <span class="c-bad">← 4개가 없다</span>
+kill 그래프 진행 중  → 키 = ['diff','failed_agents','findings','next_nodes','review_key','status']</code></pre>
+<p>
+📌 실측. <strong>M5-3 이 "반환 키 6개"라고 약속했는데 지켜지지 않는다.</strong>
+지금은 <code>.get("findings", [])</code> 로 방어하지만, <strong>계약 쪽을 고칠지가 열린 결정</strong>이다.
+</p>
+
+<h2>찾아봤는데 없는 것</h2>
+<ul class="next-steps">
+  <li><strong><code>durability="sync"</code> 가 이 조건에서 결과를 바꾸지 않았다</strong> —
+  0.5초·0.7초 kill 에서 <code>async</code> 와 <code>sync</code> 의 복원 결과가 같았다.
+  ⚠️ 우리 그래프가 superstep 2개짜리로 짧아서일 수 있다. <strong>긴 그래프에서는 재검증할 것.</strong></li>
+  <li><strong>프로세스 그룹은 안 봤다</strong> — 워커가 자식을 또 낳으면
+  <code>worker.kill()</code> 이 손자를 안 죽인다(<code>start_new_session=True</code> + <code>os.killpg</code> 가 필요).
+  지금 워커는 자식을 안 낳으므로 <strong>확인하지 않았다.</strong></li>
+</ul>
+
+<h2>미검증 잔여</h2>
+<ul class="next-steps">
+  <li><strong>Postgres 체크포인터로는 안 돌려봤다</strong> — 지금 Sqlite 를 골랐고
+  <code>langgraph-checkpoint-postgres</code> 는 설치돼 있지 않다.</li>
+  <li><strong>여러 워커가 같은 sqlite 를 여는 경우</strong> — 잠금 다툼은 확인하지 않았다. 워커가 한 대라서.</li>
+</ul>
+
+<div class="footer">
+  <h3>같이 보기</h3>
+  <ul class="next-steps">
+    <li><a href="../lessons/0011-checkpoint-is-a-resume-contract.html">Lesson 11 — 체크포인트는 재개 계약이다</a></li>
+    <li><a href="../sims/0011-checkpoint-resume.html">Sim 11 — 재개 계약 실험실</a> ·
+    ⚠️ 시뮬은 <strong>그래프 시작 기준</strong>으로 시간을 재므로, 실제 데모에서는 함정 ④ 보정이 필요하다</li>
+    <li><code>scratch/recon_kill9_resume.py</code> — 위 숫자를 재현하는 스크립트</li>
+  </ul>
+</div>
+
+</body>
+</html>

@@ -3,7 +3,7 @@
 > 새 세션이 콜드 스타트할 때 **가장 먼저 읽는 파일.**
 > "지금 뭐가 진짜로 살아있고, 뭐가 스텁이고, 다음 한 걸음이 뭔가"만 적는다. 설계는 여기 안 적는다.
 
-**마지막 갱신**: 2026-08-19 · **M5 — 노드 넷이 병렬로 돌고 실패를 값으로 바꾼다(1~4), 다음은 타임아웃 · M1 테스트 미작성 · M0 독립검증 대기**
+**마지막 갱신**: 2026-08-21 · **M5 — kill -9 재개가 실측으로 통과(1~6), 남은 것은 데모 하나 · M1 테스트 미작성 · M0 독립검증 대기**
 
 ---
 
@@ -97,9 +97,9 @@
 
 | | | 상태 |
 |---|---|---|
-| `learning/lessons/` | 레슨 **9개** (01 스키마 · 02 인젝션 · 03 HMAC · 04 멱등성 · 05 삭제 문 4개 · 06 부분 실패 · 07 리듀서=허가 · 08 엣지=시간 · **09 예상실패vs버그**) | ✅ |
-| `learning/sims/` | 시뮬 **9개** — 0001~0009 전부 | ✅ |
-| `learning/NOTEBOOK.md` | **사용자가 자기 말로 적는 곳.** Claude가 채우지 않는다 | ✅ **9/9 전부 4/4** (`/learn-check`) |
+| `learning/lessons/` | 레슨 **11개** (01 스키마 · 02 인젝션 · 03 HMAC · 04 멱등성 · 05 삭제 문 4개 · 06 부분 실패 · 07 리듀서=허가 · 08 엣지=시간 · 09 예상실패vs버그 · 10 타임아웃≠취소 · **11 체크포인트=재개계약**) | ✅ |
+| `learning/sims/` | 시뮬 **11개** — 0001~0011 전부 | ✅ |
+| `learning/NOTEBOOK.md` | **사용자가 자기 말로 적는 곳.** Claude가 채우지 않는다 | ✅ **11/11 전부 4/4** (`/learn-check`) |
 | `.claude/skills/learn-check/` | 학습 사이클을 **파일로** 판정하는 프로젝트 스킬 | ✅ `/learn-check` 또는 `python3 .claude/skills/learn-check/scripts/check.py` |
 
 `CLAUDE.md`의 학습 사이클이 **읽기 → 만지기 → 적기 → 만들기** 4단계로 바뀌었다.
@@ -175,9 +175,9 @@ M3·M4 를 건너뛰어도 되는 이유: 로그가 없어도 돌고, M1 의 큐
 | 2 | `backend/orchestration/state.py` — state + 리듀서 | ✅ 확정 (2026-08-19) |
 | 3 | `langgraph_engine.py` — 팬아웃/팬인 배선 | ✅ 확정 (2026-08-19) |
 | 4 | 더미 노드 4개 (sleep + 실패 모드) | ✅ 확정 (2026-08-20) |
-| 5 | 모든 노드에 타임아웃 [01:05:02] | ⬜ ← **다음 한 걸음** |
-| 6 | 체크포인터 — **결정 필요** | ⬜ |
-| 7 | `scripts/demo_m5.py` | ⬜ |
+| 5 | 모든 노드에 타임아웃 [01:05:02] | ✅ 확정 (2026-08-21) |
+| 6 | 체크포인터 — **결정 필요** | ✅ 확정 (2026-08-21) |
+| 7 | `scripts/demo_m5.py` | ⬜ ← **다음 한 걸음** |
 
 **1번에서 내린 결정** (코드에 들어감 — 근거는 `engine.py` 주석):
 - 세 메서드가 **같은 식별자 하나**를 인자로 받는다. LangGraph 의 `thread_id` 이고
@@ -271,6 +271,103 @@ superstep 이 배리어라 한 노드가 안 끝나면 나머지 셋이 끝나�
 
 **6번 결정**: 인메모리 체크포인터는 완료 판정 ②(`kill -9` 재개)를 **통과 못 한다.**
 후보는 Sqlite(파일 하나) / Postgres(이미 떠 있음). 그 단계에서 정한다.
+
+**5번에서 내린 결정** (근거는 `langgraph_engine.py` 주석 + [Lesson 10](../learning/lessons/0010-timeout-is-not-cancel.html)):
+
+⚠️ **M5-5 는 "타임아웃 값을 정하는 일"이 아니라 "터질 자리를 `try` 안으로 옮기는 일"이었다.**
+층이 셋인데 셋은 몇 초냐가 아니라 **실패가 값이 되느냐 예외가 되느냐**로 갈린다:
+
+| | 어디 | 결과 |
+|---|---|---|
+| ① | `invoke()` 바깥 | 넷이 같이 죽는다. 이미 끝난 셋의 findings 도 버려진다 |
+| ② | 노드 밖 (`add_node(timeout=)`) | 예외가 노드 **밖**에서 나서 `_run_specialist` 의 `try` 를 비껴간다 |
+| ③ | 노드 **안** (호출 자체) | `try` 안에서 난다 → `failed_agents` 라는 **값**이 된다 ✅ |
+
+①② 는 **부분 실패를 전체 실패로 승격**시킨다 — M5-4 에서 만든 "셋이 죽어도 하나로 진행"이
+도로 무너지고 그게 정확히 **G2** 다.
+
+- **`_call_agent` 가 `time.sleep()` 한 줄이 아니라 잘게 자면서 마감을 재는 루프**가 됐다.
+  한 번에 다 자면 마감을 확인할 틈이 없다. M6 에서 이 루프가 통째로 `OpenAI(timeout=...)` 로 바뀐다.
+- **`AGENT_TIMEOUT_SECONDS = 1.0` · 상수 하나.** 에이전트별 dict 를 안 쓴 이유는
+  넷의 지연이 다른 게 성질이 아니라 **병렬을 눈으로 보려고 우리가 다르게 준 것**이기 때문.
+  ⚠️ **값 1.0 은 관측이 아니라 데모 가능성에서 나온 잠정치다** — `_DELAYS` 최대(0.8초)보다 크고
+  사람이 기다릴 만한 값. 처음 180 초를 넣었다가 되돌렸다(hang 데모가 3분 걸려 완료 판정을 못 돌린다).
+- **던지는 예외는 `openai.APITimeoutError`.** 파이썬 내장 `TimeoutError` 는 `OpenAIError` 의
+  자손이 아니라서 **두 번째 `except` 절**(내 탓)이 잡는다 → 우리 버그로 기록된다.
+  ⚠️ `request=` 는 **더미에서만 우리가 만든다** — 진짜 호출에서는 SDK 가 채운다
+  (`openai/_base_client.py:1083`).
+- 안 끝나는 에이전트 주입 통로 `M5_HANG_AGENTS` 추가. `M5_FAIL_AGENTS` 와 **다른 실패**다 —
+  저건 `raise` 하고 이건 아무것도 안 한다.
+
+**실측 — 완료 판정 ③ 이 무한 대기까지 확장됐다** (2026-08-21):
+
+```
+M5_HANG_AGENTS=security
+WARNING backend.orchestration.langgraph_engine: Request timed out.   ← log.warning (바깥 탓)
+1.03초 · findings 3개 · failed ['security'] · done
+```
+
+`log.exception` 이 아니라 `log.warning` 한 줄인 것이 예외 타입 선택의 값어치다 —
+Lesson 09 의 첫 번째 절이 받았다는 증거.
+
+📌 **배리어의 주인이 바뀌었다.** 1.03초 = 타임아웃 1.0 + tick 0.02. 가장 느린 정상 노드(0.8초)가
+아니라 **타임아웃이 층의 시간을 정했다.** M6 에서 이 값이 곧 **리뷰 한 건의 최대 지연**이 된다.
+그리고 SDK 는 타임아웃 뒤 **기본 2번 재시도**하므로(`DEFAULT_MAX_RETRIES = 2`)
+실제 최대 대기는 이 값의 3배 + 백오프다 — `max_retries=` 도 M6 에서 같이 정할 것.
+
+⚠️ **타임아웃은 취소가 아니다.** 우리가 기다리기를 그만두는 것뿐이고 저쪽은 계속 돈다
+(실측: `fut.cancel()` → `False`, 포기 2초 뒤에도 함수가 끝까지 실행됨).
+**그래서 재시도는 같은 일을 두 번 시키는 것일 수 있다 — INV-2 가 M6 에서 다시 열린다.**
+
+
+**6번에서 내린 결정** (근거는 `backend/orchestration/checkpointer.py` 주석 + [Lesson 11](../learning/lessons/0011-checkpoint-is-a-resume-contract.html)):
+
+**새 파일 `backend/orchestration/checkpointer.py`** — 경계가 세 겹이 됐다.
+`engine.py`(계약, LangGraph 모름) → `langgraph_engine.py`(LangGraph 알지만 저장소 모름) →
+`checkpointer.py`(**여기만 저장소를 안다**). M5-1 의 "엔진은 DB 를 모른다"가 주입 구조라서 공짜로 지켜졌다.
+
+- **`SqliteSaver` · 파일 하나** (`checkpoints.sqlite`, `.gitignore` 에 `*.sqlite` 추가).
+  `_STACK = ExitStack()` 으로 커넥션 수명을 프로세스 전체로 늘린다 —
+  ⚠️ `from_conn_string` 이 **`@contextmanager`** 라 `with` 를 벗어나면 닫힌다.
+  📌 **공식 문서 예제가 틀렸다**: `checkpointer = PostgresSaver.from_conn_string(...)` 을 그대로 쓰면
+  saver 가 아니라 `_GeneratorContextManager` 를 받는다. context7 로 교차 검증함.
+  ⚠️ `setup()` 계약이 둘이 **반대**다 — Postgres *"MUST be called directly"* /
+  Sqlite *"should not be called directly"*. 그래서 안 부른다.
+- **`findings` 채널을 `dict` 로 눕혔다** (`Finding.model_dump()`). 세 곳이 같이 바뀌었다:
+  `langgraph_engine.py:296` · `state.py:82` · `checkpointer.py`(`build_serde()` 삭제).
+  이유는 검증이 아니라 **저장**이다 — Pydantic 객체를 그대로 두면 저장 포맷이 클래스에 묶여
+  **`Finding` 에 필드가 하나 늘면 저장된 체크포인트를 못 읽는다.** 그리고 **M6 이 그걸 확실히 바꾼다**.
+  ⚠️ 검증은 안 사라졌다 — `Finding(...)` 생성자가 INV-3 을 강제한 뒤에 눕힌다.
+  **검증은 입구에서, 저장은 눕혀서.** 대가: M6 애그리게이터가 `f["severity"]` 를 쓰게 된다.
+  📌 `Deserializing unregistered type` 경고가 사라진 건 부산물이지 목적이 아니다.
+
+**실측 — 완료 판정 ② 통과** (2026-08-21, `scratch/recon_kill9_resume.py`):
+
+```
+④ 자식이 READY 까지 0.51초 — 그래프는 아직 0초다
+⑤ 그래프+0.50초에 kill · 살아있었나=True · returncode=-9
+   재시작 직후: status=running · findings 2개 · 남은 노드 ['security', 'testing']
+   resume() 후:  status=done · findings 4개 · 0.82초
+```
+
+**진짜 `kill -9` 로 죽인 뒤 재개했고 LLM 호출 2회를 아꼈다.** quality(0.4s)·docs(0.3s)만
+끝나 있었으므로 `pending_writes` 에 남은 건 둘뿐이었다 — 살아남는 목록은 **타이밍이 정한다**.
+
+⚠️ **M5-7 데모를 쓸 때 반드시 볼 것** — [reference/kill9-and-resume.html](../learning/reference/kill9-and-resume.html)
+에 함정 다섯이 근거와 함께 정리돼 있다. 특히:
+
+| | 함정 | 왜 데모가 깨지나 |
+|---|---|---|
+| ④ | **자식 시작에 0.42초**(그중 langgraph import 0.34초) | `Popen` 직후 `sleep(0.5)` 는 그래프 **0.08초 지점**이다. "죽인 것"과 "시작도 안 한 것"이 결과만으로 구분 안 됨 → 자식이 `READY` 를 찍고 부모가 읽은 뒤 시계를 잰다 |
+| ② | 이미 끝난 프로세스에 `kill()` → **조용히 아무 일도 안 남** | 데모가 "죽였다"고 말하려면 `poll() is None` 을 같이 찍어야 근거가 된다 |
+| ⑤ | mid-superstep 에 죽으면 `get_state()` 가 **키를 안 준다** | `s["findings"]` → `KeyError`. **아래 열린 결정 참조** |
+
+⬜ **열린 결정 — `get_state()` 의 반환 계약이 안 지켜진다** (2026-08-21 발견):
+M5-3 에서 "반환 키 6개"를 약속했는데, 아주 이른 시점에 죽으면
+`snapshot.values` 가 비어서 `['next_nodes', 'status']` 둘만 나온다.
+지금은 호출부가 `.get("findings", [])` 로 방어하고 있다. **계약 쪽을 고칠지(항상 6개를 채워서
+돌려줄지) 호출부가 방어할지가 안 정해졌다.** M5-7 데모가 이걸 바로 만난다.
+
 
 ### 1. M0 독립 검증 — **새 세션에서**
 

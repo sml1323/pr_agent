@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 10 — 타임아웃은 취소가 아니다</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Lesson 10 · M5-5 · backend/orchestration/langgraph_engine.py</p>
+<h1>타임아웃은<br><em>취소</em>가 아니다</h1>
+<p class="subtitle">"5초 뒤 포기"는 기다리는 쪽이 포기하는 것이다. 일하는 쪽은 계속 돈다.</p>
+
+<p class="callout">
+<span class="label">09 가 남긴 구멍</span>
+<a href="0009-expected-failure-vs-bug.html">Lesson 09</a> 에서 <strong>터지는 것</strong>을 값으로 바꿨다.
+<code>raise</code> 하면 <code>except</code> 가 받아 <code>failed_agents</code> 에 이름이 남는다.<br><br>
+그런데 <strong>안 터지고 안 끝나는 것</strong>은 <code>except</code> 가 받을 게 없다.
+<code>try</code> 안에서 영원히 안 나온다. <strong>M5-4 실측이 딱 여기서 멈췄다.</strong>
+</p>
+
+<h2>왜 이게 M5 에서 제일 위험한가</h2>
+
+<p>
+<a href="0008-edges-draw-time.html">Lesson 08</a> 에서 확인한 것 —
+<strong>superstep 은 배리어</strong>다. 넷 중 셋이 0.8초에 끝나도, 남은 하나가 안 끝나면
+그 층이 안 닫힌다. aggregate 는 영원히 안 선다.
+</p>
+
+<pre><code>security  ██████ 0.6s  끝
+quality   ████   0.4s  끝
+docs      ███    0.3s  끝
+testing   ███████████████████████████...   <span class="c-bad">← 이 하나 때문에</span>
+                                            <span class="c-comment">aggregate 는 시작조차 못 한다</span></code></pre>
+
+<div class="keystone">
+예외는 <strong>한 노드</strong>를 죽인다.<br>
+무한 대기는 <strong>그래프 전체</strong>를 세운다.
+</div>
+
+<p>
+그리고 더 나쁜 건 <strong>이게 실패로 보이지도 않는다</strong>는 것이다.
+로그도 없고, 에러도 없고, <code>failed_agents</code> 도 비어 있다.
+<a href="0006-nobody-looked.html">Lesson 06</a> 의 "빈 것의 뜻 셋" 중 ③ —
+<em>돌고 있는데 안 끝남</em> — 이 자리다.
+</p>
+
+<h2>실측 ① — 타임아웃을 걸어도 일은 안 멈춘다</h2>
+
+<p>
+가장 흔한 첫 시도부터 보자. 스레드에 던지고 <code>timeout</code> 을 주고 기다린다.
+</p>
+
+<pre><code>fut = executor.submit(slow)      <span class="c-comment"># slow 는 2초 걸린다</span>
+fut.result(timeout=0.5)          <span class="c-comment"># 0.5초만 기다린다</span></code></pre>
+
+<pre><code>[0.50초] TimeoutError — 기다리기를 포기했다
+  fut.cancel() → <span class="c-bad">False</span>   (False = 취소 못 함)
+  0.5초 시점  done=[]
+  2.5초 시점  done=['나 아직 살아있다']   <span class="c-bad">← 포기한 뒤에도 끝까지 돌았다</span></code></pre>
+
+<p class="callout">
+<span class="label">1차 출처</span>
+<em>"Attempt to cancel the call. <strong>If the call is currently being executed
+or finished running and cannot be cancelled then the method will return <code>False</code></strong>,
+otherwise the call will be cancelled and the method will return <code>True</code>."</em><br>
+— <a href="https://docs.python.org/3/library/concurrent.futures.html">Python — <code>concurrent.futures.Future.cancel</code></a>
+</p>
+
+<p>
+<code>cancel()</code> 이 성공하는 건 <strong>아직 시작 안 한 일</strong>뿐이다.
+이미 돌고 있으면 파이썬은 그걸 멈출 방법이 없다 — 스레드에는 <code>kill</code> 이 없다.
+같은 문서가 더 세게 말한다:
+</p>
+
+<p class="callout">
+<span class="label">1차 출처</span>
+<em>"Regardless of the value of <em>wait</em>, <strong>the entire Python program will not exit
+until all pending futures are done executing.</strong>"</em><br>
+— <a href="https://docs.python.org/3/library/concurrent.futures.html">Python — <code>Executor.shutdown</code></a>
+</p>
+
+<div class="keystone">
+<code>timeout</code> 은 <strong>기다림</strong>에 거는 것이지<br>
+<strong>실행</strong>에 거는 것이 아니다.
+</div>
+
+<h2>실측 ② — LangGraph 는 이걸 알고 아예 거부한다</h2>
+
+<p>
+LangGraph 에는 노드별 타임아웃이 있다. 우리 노드에 걸어봤다:
+</p>
+
+<pre><code>graph.add_node("slow", slow_sync, timeout=0.5)   <span class="c-comment"># slow_sync 는 def (동기)</span>
+graph.compile()</code></pre>
+
+<pre><code>ValueError: Node timeouts are only supported for async nodes
+because <span class="c-bad">sync Python execution cannot be safely cancelled in-process.</span>
+Node 'slow' is sync.</code></pre>
+
+<p>
+<strong>돌려보기도 전에, 컴파일에서 막혔다.</strong> 라이브러리가 우리 대신 거짓말을 거절한 것이다 —
+동기 노드에 타임아웃을 받아주면 "걸었으니 안전하다"고 믿게 되는데 실제로는 아무 일도 안 일어난다.
+<a href="0001-schema-not-prompt.html">Lesson 01</a> 의 사고방식과 같다: <strong>못 지킬 약속은 애초에 안 받는다.</strong>
+</p>
+
+<h2>실측 ③ — async 로 바꿔도 안이 막혀 있으면 안 먹는다</h2>
+
+<p>
+그럼 <code>async def</code> 로 바꾸면 되나? 노드는 <code>async</code> 인데 <strong>안에서 동기 대기</strong>를 하면:
+</p>
+
+<div class="table-scroll">
+<table>
+<thead><tr><th>노드 안</th><th>timeout</th><th>결과</th></tr></thead>
+<tbody>
+<tr><td><code>await asyncio.sleep(3)</code></td><td>0.5초</td><td><strong>0.51초</strong> · <code>NodeTimeoutError</code> ✅</td></tr>
+<tr><td><code>time.sleep(3)</code></td><td>0.5초</td><td><strong>3.02초</strong> · <span class="c-bad">그냥 성공</span> 💥</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>
+같은 <code>timeout=0.5</code> 인데 아래 줄은 <strong>3초를 다 채우고 성공으로 끝났다.</strong>
+에러도 경고도 없다. LangGraph 소스가 이걸 미리 적어뒀다:
+</p>
+
+<p class="callout">
+<span class="label">1차 출처</span>
+<em>"Timeouts rely on asyncio cancellation. <strong>If your node uses synchronous
+<code>time.sleep()</code> or other CPU-bound work that blocks the GIL, the timeout will not
+be fired until after the event loop has been released.</strong>"</em><br>
+— <code>langgraph.types.TimeoutPolicy</code> 독스트링 (설치된 패키지에서 직접 읽음)
+</p>
+
+<p>
+<strong>타임아웃은 협조를 요구한다.</strong> 일하는 쪽이 중간에 손을 놓아주는(<code>await</code>) 지점이
+있어야 취소가 끼어든다. 손을 안 놓으면 아무도 못 끼어든다.
+</p>
+
+<h2>진짜 판단 — 타임아웃을 어느 층에 거나</h2>
+
+<p>
+층이 셋이다. <strong>층이 다르면 실패의 <em>모양</em>이 다르다.</strong>
+</p>
+
+<div class="table-scroll">
+<table>
+<thead><tr><th></th><th>어디</th><th>느린 하나가 생기면</th></tr></thead>
+<tbody>
+<tr><td>①</td><td><code>invoke()</code> 바깥</td><td>넷이 <strong>같이</strong> 죽는다. 살아남은 셋의 결과도 버려진다</td></tr>
+<tr><td>②</td><td>노드 <strong>밖</strong> (LangGraph <code>timeout=</code>)</td><td>예외가 <strong>밖으로</strong> 나간다 → 우리 <code>except</code> 가 못 받는다</td></tr>
+<tr><td>③</td><td>노드 <strong>안</strong> (호출 자체에)</td><td>예외가 <code>try</code> 안에서 난다 → <strong>값으로 바뀐다</strong> ✅</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>
+②를 실제로 돌려봤다. 느린 노드 하나 + 빠른 노드 하나, 느린 쪽에만 타임아웃:
+</p>
+
+<pre><code>0.51초 · NodeTimeoutError: Node 'slow' exceeded its run timeout of 0.500s</code></pre>
+
+<p>
+<code>ainvoke()</code> 가 <strong>터졌다.</strong> 빠른 노드는 이미 끝났는데 결과를 못 받는다.
+<code>_run_specialist</code> 의 <code>try</code> 는 <strong>노드 안</strong>에 있고 이 예외는 <strong>노드 밖</strong>에서
+났으니, <a href="0009-expected-failure-vs-bug.html">Lesson 09</a> 에서 공들여 나눈 <code>except</code> 절 둘을
+<strong>통째로 지나쳐 간다.</strong>
+</p>
+
+<div class="keystone">
+노드 밖에서 잰 시간은 <strong>노드 안의 값</strong>이 될 수 없다.<br>
+<code>failed_agents</code> 에 이름을 남기려면 <strong>안에서</strong> 재야 한다.
+</div>
+
+<p class="callout">
+<span class="label">이게 G2 다</span>
+<code>CURRENT.md</code> 의 최악 시나리오 — "critical 없음"과 "확인 안 됨"을 게이트가 구분 못 하는 것.
+①②는 <strong>부분 실패를 전체 실패로 승격</strong>시킨다. M5-4 에서 어렵게 만든
+"셋이 죽어도 하나로 진행한다"가 여기서 도로 무너진다.
+</p>
+
+<h2>그럼 ③은 어떻게 하나 — 이미 준비돼 있다</h2>
+
+<p>
+M6 에서 <code>_call_agent</code> 안이 진짜 HTTP 호출이 된다. HTTP 는 <strong>소켓을 닫을 수 있다</strong> —
+스레드와 달리 진짜로 멈출 수 있는 대상이다. OpenAI SDK 가 그 손잡이를 이미 노출한다:
+</p>
+
+<pre><code><span class="c-comment"># openai/_constants.py — 설치된 패키지에서 직접 읽음</span>
+DEFAULT_TIMEOUT = httpx.Timeout(timeout=600, connect=5.0)
+DEFAULT_MAX_RETRIES = 2</code></pre>
+
+<p class="callout">
+<span class="label">⚠️ 기본값을 읽어라</span>
+<strong>600초 = 10분이다.</strong> 웹훅 워커가 10분 동안 한 에이전트를 기다린다는 뜻이고,
+이건 사실상 <em>"타임아웃 없음"</em>과 구분이 안 된다.
+<strong>기본값이 있다는 것과 그 기본값이 우리에게 맞다는 것은 다른 얘기다.</strong>
+</p>
+
+<p>
+그리고 이 예외의 족보가 <a href="0009-expected-failure-vs-bug.html">Lesson 09</a> 와 정확히 맞물린다:
+</p>
+
+<pre><code>OpenAIError
+ └── APIError
+      └── APIConnectionError
+           └── <span class="c-good">APITimeoutError</span>      <span class="c-comment"># ← M5-4 의 첫 except 가 이미 받는다</span></code></pre>
+
+<p>
+<strong>M5-4 에서 쓴 <code>except openai.OpenAIError</code> 가 타임아웃도 함께 받는다.</strong>
+09 에서 "지금 아는 것으로 세운 가설"이라고 했던 게 여기서 이자를 낸다 —
+층을 골라 잡았기 때문에 새 실패 종류가 하나 늘어도 코드를 안 고친다.
+</p>
+
+<h2>몇 초로 정하나</h2>
+
+<p>
+숫자를 고르는 건 취향이 아니라 <strong>계산</strong>이다. 재료가 셋 있다:
+</p>
+
+<div class="table-scroll">
+<table>
+<thead><tr><th>재료</th><th>묻는 것</th><th>틀리면</th></tr></thead>
+<tbody>
+<tr><td>정상 응답의 꼬리</td><td>느린 정상 호출이 몇 초까지 가나</td><td>짧으면 <strong>멀쩡한 응답을 실패로 기록</strong></td></tr>
+<tr><td>위에서 정한 예산</td><td>워커 하나가 리뷰 하나에 몇 초까지 쓰나</td><td>길면 큐가 밀린다</td></tr>
+<tr><td>배리어</td><td>넷 중 가장 느린 하나가 층 전체 시간</td><td>노드별 예산 ≠ 합계 예산</td></tr>
+</tbody>
+</table>
+</div>
+
+<p class="callout">
+<span class="label">우리가 아직 모르는 것</span>
+첫 번째 재료가 <strong>M5 에 없다.</strong> 더미 노드의 <code>0.3~0.8초</code> 는 우리가 만든 숫자지
+관측한 숫자가 아니다. <strong>그래서 지금 고르는 값은 잠정치다</strong> —
+M6 에서 진짜 호출의 지연을 보고 다시 정할 자리다. 중요한 건 지금 맞는 숫자를 찍는 게 아니라
+<strong>고칠 자리를 한 곳으로 모아두는 것</strong>이다.
+</p>
+
+<h2>타임아웃 뒤에 재시도하면 — INV-2 가 걸린다</h2>
+
+<p>
+"포기했다"는 <strong>"안 일어났다"가 아니다.</strong> 실측 ①에서 본 그대로 —
+우리가 포기한 뒤에도 저쪽은 끝까지 돌았다. LLM 호출이면 <strong>서버는 이미 답을 만들었고
+토큰도 이미 썼다.</strong> 우리만 그걸 못 본 것이다.
+</p>
+
+<pre><code>클라이언트:  ──기다림──✂ 포기(timeout)      <span class="c-comment"># 여기서 재시도하면?</span>
+서버:        ──────────────완료─→ 응답      <span class="c-bad"># 이건 이미 일어났다</span></code></pre>
+
+<p>
+그래서 재시도는 <strong>같은 일을 두 번 시키는 것</strong>일 수 있다.
+<a href="0004-same-delivery-twice.html">Lesson 04</a>(INV-2)가 웹훅 입구에서 푼 문제와 <strong>같은 문제</strong>가
+LLM 호출 앞에서 다시 나온다. SDK 가 기본으로 <code>max_retries=2</code> 를 하고 있다는 걸
+아는 것이 그래서 중요하다 — <strong>우리가 재시도를 안 써도 이미 재시도가 돌고 있다.</strong>
+</p>
+
+<h2>회상 연습</h2>
+
+<div class="quiz" data-answer="3">
+  <p class="quiz-q"><code>fut.result(timeout=0.5)</code> 가 <code>TimeoutError</code> 를 냈다. 일하던 함수는?</p>
+  <ol class="quiz-opts">
+    <li data-fb="파이썬은 도는 스레드를 멈출 수 없다. cancel() 이 False 를 돌려준 이유다.">즉시 중단되어 정리된다</li>
+    <li data-fb="예외는 기다린 쪽에서 난다. 일하는 함수 안으로 들어가지 않는다.">함수 안에서 예외가 난다</li>
+    <li data-fb="실측: 포기 2초 뒤에도 마지막 줄까지 실행됐다. 타임아웃은 기다림에만 걸린다.">멈추지 않고 끝까지 돈다</li>
+  </ol>
+</div>
+
+<div class="quiz" data-answer="1">
+  <p class="quiz-q">동기(<code>def</code>) 노드에 <code>add_node(..., timeout=5)</code> 를 걸면?</p>
+  <ol class="quiz-opts">
+    <li data-fb="compile 에서 ValueError. '못 지킬 약속은 안 받는다' — 라이브러리가 거절한다.">컴파일 단계에서 막힌다</li>
+    <li data-fb="조용히 무시되면 최악이다. LangGraph 는 그러지 않고 막는다.">조용히 무시되고 돈다</li>
+    <li data-fb="스레드를 늘려도 도는 스레드를 죽이는 수단은 여전히 없다.">스레드로 알아서 돈다</li>
+  </ol>
+</div>
+
+<div class="quiz" data-answer="2">
+  <p class="quiz-q">노드 <strong>밖</strong>(LangGraph <code>timeout=</code>)에 걸면 안 되는 이유는?</p>
+  <ol class="quiz-opts">
+    <li data-fb="반대다. 밖에 걸어도 안 끝난 노드를 멈출 수는 있다. 문제는 그 결과의 모양이다.">노드를 멈추지 못해서</li>
+    <li data-fb="예외가 노드 밖에서 나므로 안의 try 가 못 받는다. failed_agents 에 이름이 안 남는다.">값이 아니라 예외라서</li>
+    <li data-fb="속도는 상관없다. 갈리는 건 실패가 값이 되느냐 예외로 나가느냐다.">재는 시간이 부정확해서</li>
+  </ol>
+</div>
+
+<div class="quiz" data-answer="3">
+  <p class="quiz-q">타임아웃 후 재시도가 INV-2 를 건드리는 이유는?</p>
+  <ol class="quiz-opts">
+    <li data-fb="네트워크가 끊긴 건 별개 사례다. 문제는 끊기지 않았는데도 생긴다.">요청이 안 갔을 수 있어서</li>
+    <li data-fb="예외 타입은 이 문제와 무관하다. 09 의 주제였지 10 의 주제가 아니다.">예외 종류가 달라져서</li>
+    <li data-fb="포기는 우리 쪽 사정이고, 서버는 이미 처리를 끝냈을 수 있다. 재시도 = 두 번 시킴.">저쪽은 이미 끝냈을 수 있어서</li>
+  </ol>
+</div>
+
+<h2>우리 코드에 착지</h2>
+
+<p>
+<code>_call_agent()</code> 가 <strong>지금은 <code>time.sleep()</code></strong> 이다 — 실측 ③의 아래 줄, 즉
+<strong>어떤 타임아웃도 안 먹는 모양</strong>이다. M5-5 의 일은 그래서 두 가지로 갈린다:
+</p>
+
+<ul class="next-steps">
+  <li><strong>자리를 파는 것</strong> — 타임아웃이 <em>노드 안</em>에서 나서 <code>except</code> 로 흘러가게.
+  M6 에서 SDK 의 <code>timeout=</code> 이 그 자리에 꽂힌다</li>
+  <li><strong>더미로 증명하는 것</strong> — 지금 안 끝나는 노드를 만들어 놓고,
+  나머지 셋이 <code>findings</code> 를 들고 <code>done</code> 까지 가는지 눈으로 볼 것</li>
+</ul>
+
+<div class="footer">
+  <h3>1차 출처 — 이건 꼭 읽을 것</h3>
+  <p>
+    <a href="https://docs.python.org/3/library/concurrent.futures.html">Python — <code>concurrent.futures</code></a>
+    의 <strong><code>Future.cancel</code></strong> 두 문장. 여기서 <em>"cannot be cancelled"</em> 를
+    직접 읽는 게 이 레슨의 절반이다.
+  </p>
+  <p>
+    나머지 절반은 <strong>설치된 패키지 안</strong>에 있다. 문서보다 정확하다:
+  </p>
+  <pre><code>uv run python -c "
+from langgraph.types import TimeoutPolicy
+print(TimeoutPolicy.__doc__)
+import openai._constants as c
+print(c.DEFAULT_TIMEOUT, c.DEFAULT_MAX_RETRIES)
+"</code></pre>
+
+  <h3>다음</h3>
+  <ul class="next-steps">
+    <li><strong>시뮬레이터로 굴려보기</strong> — 타임아웃을 세 층에 각각 걸어보고 무엇이 살아남는지</li>
+    <li><strong><code>NOTEBOOK.md</code> 에 내 말로 3줄</strong> — 레슨을 다시 열지 말고</li>
+    <li><strong>M5-5 의 <code>TODO(human)</code></strong> — 그다음이 코드다</li>
+    <li><a href="0009-expected-failure-vs-bug.html">Lesson 09 — 예상한 실패와 우리 버그는 다르다</a> · 바로 앞</li>
+    <li><a href="0008-edges-draw-time.html">Lesson 08 — 엣지는 시간을 긋는다</a> · 배리어의 근거</li>
+  </ul>
+
+  <p style="margin-top:1.5rem">
+    <strong>혼자 해보면 좋은 것:</strong> <code>time.sleep(3)</code> 하는 함수를
+    <code>ThreadPoolExecutor</code> 에 던지고 <code>result(timeout=0.5)</code> 로 받아라.
+    타임아웃이 난 <strong>뒤에</strong> 그 함수가 리스트에 뭔가를 append 하는지 확인할 것.
+    "포기했다"와 "멈췄다"가 다르다는 걸 <strong>표로 읽는 것과 직접 보는 건 다르다.</strong>
+  </p>
+
+  <p>
+    막히거나 애매한 부분은 그대로 물어보면 된다. 이 레슨을 쓴 에이전트가 선생이다.
+  </p>
+</div>
+
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

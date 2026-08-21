@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sim 10 — 타임아웃 층 실험실</title>
+<style>
+:root{
+  --bg:#fffef9; --fg:#1a1a18; --muted:#6b6b63; --rule:#ddd9cc;
+  --accent:#8a2b1f; --accent-soft:#f5ece9; --code-bg:#f4f2ea;
+  --ok:#2d6a4a; --ok-soft:#e8f2ec; --warn:#8a5a00; --warn-soft:#faf1dd;
+  --dead:#9b988e; --live:#1f6f8a; --live-soft:#e4f0f4;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#16161a; --fg:#e8e6df; --muted:#9b988e; --rule:#33333a;
+    --accent:#e8836f; --accent-soft:#2a1f1d; --code-bg:#1e1e24;
+    --ok:#7bc39a; --ok-soft:#1c2a23; --warn:#d9a441; --warn-soft:#2a2317;
+    --dead:#55555e; --live:#6fb6cf; --live-soft:#17262c;
+  }
+}
+*{box-sizing:border-box}
+html{font-size:16px}
+body{background:var(--bg);color:var(--fg);margin:0 auto;max-width:66rem;
+  padding:2.5rem 1.25rem 6rem;line-height:1.6;
+  font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Apple SD Gothic Neo","Noto Serif KR",serif}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+.eyebrow{font-family:ui-monospace,Menlo,monospace;font-size:.7rem;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--muted);margin:0 0 .5rem}
+h1{font-size:2rem;line-height:1.15;margin:0 0 .6rem;letter-spacing:-.02em}
+.subtitle{color:var(--muted);margin:0 0 1.6rem;font-size:1.02rem}
+p{margin:0 0 .9rem}
+code{font-family:ui-monospace,Menlo,monospace;font-size:.85em;background:var(--code-bg);
+  padding:.1em .35em;border-radius:3px}
+a{color:var(--accent)}
+.panel{border:1px solid var(--rule);border-radius:8px;padding:1rem 1.1rem;margin:0 0 1.2rem;
+  background:color-mix(in srgb,var(--code-bg) 40%,transparent)}
+.panel h3{margin:0 0 .7rem;font-size:.75rem;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);font-family:ui-monospace,Menlo,monospace;font-weight:600}
+.grid2{display:grid;grid-template-columns:1.02fr 1fr;gap:1.2rem}
+@media(max-width:900px){.grid2{grid-template-columns:1fr}}
+
+/* HUD */
+.hud{display:flex;flex-wrap:wrap;gap:.9rem;align-items:center;border:1px solid var(--rule);
+  border-radius:8px;padding:.7rem .9rem;margin:0 0 1.2rem;background:var(--bg);
+  font-family:ui-monospace,Menlo,monospace;font-size:.78rem}
+.hud .m{display:flex;flex-direction:column;gap:.2rem;min-width:8.5rem}
+.hud .m span{color:var(--muted);font-size:.66rem;letter-spacing:.08em;text-transform:uppercase}
+.bar{height:7px;border-radius:4px;background:var(--rule);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ok);transition:width .3s}
+.bar.low i{background:var(--accent)}
+.hud b{font-size:1rem}
+
+/* 시나리오 카드 */
+.card{border:1px solid var(--live);border-left-width:3px;border-radius:6px;padding:.7rem .9rem;
+  background:var(--live-soft);margin:0 0 1.2rem}
+.card .t{font-weight:600;margin:0 0 .2rem}
+.card .n{font-size:.86rem;color:var(--muted);margin:0}
+
+/* 조작 */
+.opt{display:block;border:1px solid var(--rule);border-radius:5px;padding:.45rem .65rem;
+  margin-bottom:.35rem;cursor:pointer;background:var(--bg);font-size:.83rem}
+.opt:hover{border-color:var(--accent)}
+.opt.sel{border-color:var(--live);background:var(--live-soft)}
+.opt .mono{font-size:.78rem}
+.opt .sub{display:block;font-size:.74rem;color:var(--muted);margin-top:.1rem;
+  font-family:"Iowan Old Style",Georgia,serif}
+input[type=range]{width:100%}
+button.run{background:var(--live);color:#fff;border:none;border-radius:6px;padding:.5rem 1.3rem;
+  font:inherit;font-size:.92rem;cursor:pointer;font-weight:600}
+button.run:disabled{opacity:.4;cursor:default}
+button.skip{background:var(--bg);border:1px solid var(--rule);border-radius:6px;padding:.5rem .9rem;
+  font:inherit;font-size:.82rem;cursor:pointer;color:var(--muted);margin-left:.4rem}
+button.skip:hover{border-color:var(--accent)}
+button.skip:disabled{opacity:.4;cursor:default}
+
+/* 예측 */
+.pred{border:1px solid var(--live);border-radius:8px;padding:.9rem 1rem;margin:0 0 1.2rem;background:var(--live-soft)}
+.pred .q{font-weight:600;margin:0 0 .6rem;font-size:.95rem}
+.pred ol{list-style:none;margin:0;padding:0}
+.pred li{border:1px solid var(--rule);border-radius:5px;padding:.45rem .7rem;margin-bottom:.35rem;
+  cursor:pointer;background:var(--bg);font-size:.84rem;font-family:ui-monospace,Menlo,monospace}
+.pred li:hover{border-color:var(--accent)}
+.pred li.correct{border-color:var(--ok);background:var(--ok-soft)}
+.pred li.wrong{border-color:var(--accent);background:var(--accent-soft)}
+.pred li.locked{cursor:default}
+.streak{float:right;font-family:ui-monospace,Menlo,monospace;font-size:.78rem;color:var(--muted)}
+
+canvas{width:100%;height:auto;display:block;border-radius:6px}
+.res{border:1px solid var(--rule);border-radius:6px;padding:.6rem .7rem;margin-bottom:.6rem;background:var(--bg);
+  font-family:ui-monospace,Menlo,monospace;font-size:.8rem}
+.res .row{display:flex;justify-content:space-between;padding:.15rem 0;gap:.6rem}
+.res .row b{font-weight:600}
+.verdict{border-radius:6px;padding:.7rem .9rem;margin:.6rem 0;font-size:.9rem}
+.verdict.ok{background:var(--ok-soft);border-left:3px solid var(--ok)}
+.verdict.bad{background:var(--accent-soft);border-left:3px solid var(--accent)}
+.verdict.warn{background:var(--warn-soft);border-left:3px solid var(--warn)}
+.verdict b{display:block;margin-bottom:.2rem}
+.note{font-size:.85rem;color:var(--muted)}
+.tag{font-family:ui-monospace,Menlo,monospace;font-size:.68rem;padding:.1rem .4rem;border-radius:3px;
+  background:var(--code-bg);color:var(--muted)}
+.tag.bad{background:var(--accent-soft);color:var(--accent)}
+.tag.ok{background:var(--ok-soft);color:var(--ok)}
+.gameover{border:2px solid var(--accent);border-radius:8px;padding:1.2rem;margin:0 0 1.2rem;
+  background:var(--accent-soft)}
+.gameover h2{margin:0 0 .4rem;font-size:1.25rem}
+</style>
+</head>
+<body>
+
+<p class="eyebrow">Sim 10 · Lesson 10 · M5-5</p>
+<h1>타임아웃 층 실험실</h1>
+<p class="subtitle">PR 12건을 워커 하나로 처리한다. <strong>타임아웃을 어느 층에 거는지</strong>가 살아남는 결과를 정한다.</p>
+
+<div class="hud">
+  <div class="m"><span>라운드</span><b id="hRound">1 / 12</b></div>
+  <div class="m"><span>리뷰 신뢰도</span><div class="bar" id="hTrustBar"><i style="width:100%"></i></div><b id="hTrust">100</b></div>
+  <div class="m"><span>워커 시간 예산</span><div class="bar" id="hBudgetBar"><i style="width:100%"></i></div><b id="hBudget">40.0초</b></div>
+  <div class="m"><span>예측 연속</span><b id="hStreak">0</b></div>
+</div>
+
+<div id="over"></div>
+
+<div class="card" id="card">
+  <p class="t" id="cardT">—</p>
+  <p class="n" id="cardN">—</p>
+</div>
+
+<div class="pred" id="pred" style="display:none">
+  <span class="streak" id="predStreak"></span>
+  <p class="q">이 설정으로 돌리면 결과는?</p>
+  <ol id="predopts"></ol>
+</div>
+
+<div class="grid2">
+  <div>
+    <div class="panel">
+      <h3>① 노드를 어떻게 쓰나</h3>
+      <div id="implOpts"></div>
+    </div>
+
+    <div class="panel">
+      <h3>② 타임아웃을 어느 층에 거나</h3>
+      <div id="layerOpts"></div>
+    </div>
+
+    <div class="panel">
+      <h3>③ 몇 초로 하나 <span class="tag" id="tval">1.0초</span></h3>
+      <input type="range" id="tslider" min="0.2" max="3.0" step="0.1" value="1.0">
+      <p class="note" style="margin:.4rem 0 0">
+        평소 지연: security 0.6 · quality 0.4 · testing 0.8 · docs 0.3
+      </p>
+      <p style="margin:.9rem 0 0">
+        <button class="run" id="runbtn">▶ 리뷰를 돌린다</button>
+        <button class="skip" id="skipbtn">사람 큐로 넘긴다</button>
+      </p>
+      <p class="note" style="margin:.4rem 0 0">넘기면 안전하다 — 점수도 0이고 예산만 3초 나간다.</p>
+    </div>
+  </div>
+
+  <div>
+    <div class="panel">
+      <h3>타임라인 — superstep</h3>
+      <canvas id="cv" width="1040" height="330"></canvas>
+    </div>
+    <div class="panel">
+      <h3>결과</h3>
+      <div class="res" id="res">—</div>
+      <div id="verdict"></div>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <h3>해설</h3>
+  <div id="explain"><p class="note">한 판 돌리면 여기에 근거가 뜬다.</p></div>
+</div>
+
+<p class="note" style="margin-top:1.5rem">
+돌아가기 → <a href="../lessons/0010-timeout-is-not-cancel.html">Lesson 10</a> ·
+<a href="../lessons/0009-expected-failure-vs-bug.html">Lesson 09</a> ·
+<a href="../lessons/0008-edges-draw-time.html">Lesson 08</a> ·
+그다음 <code>NOTEBOOK.md</code> 에 내 말로 3줄
+</p>
+
+<script>
+/* ─────────────────────────────────────────────────────────────
+   엔진 — 실측(2026-08-20) 네 개를 규칙으로 옮겼다.
+     ① fut.result(timeout=.5) → TimeoutError 는 났지만 함수는 끝까지 돌았다
+     ② 동기 노드 + add_node(timeout=) → compile 에서 ValueError
+     ③ async + await asyncio.sleep(3) + timeout=.5 → 0.51초 NodeTimeoutError
+        같은 노드 안을 time.sleep(3) 으로 바꾸면 → 3.02초에 그냥 성공
+     ④ ③의 타임아웃은 ainvoke() 를 통째로 터뜨렸다 — 끝난 노드 결과도 못 받는다
+   숫자는 전부 아래 규칙에서 계산한다. 하드코딩한 결과값은 없다.
+   ───────────────────────────────────────────────────────────── */
+const AG = ["security", "quality", "testing", "docs"];
+const BASE = { security: 0.6, quality: 0.4, testing: 0.8, docs: 0.3 };
+const INF = Infinity;
+
+const IMPLS = [
+  { v: "sync",  l: "def  (동기)",
+    s: "지금 우리 코드. <code>time.sleep()</code> 으로 기다린다" },
+  { v: "async", l: "async def + await",
+    s: "이벤트 루프에 손을 놓아준다 — 취소가 끼어들 틈이 생긴다" },
+  { v: "block", l: "async def 인데 안은 time.sleep",
+    s: "겉만 async. GIL 을 붙잡고 있어 아무도 못 끼어든다" },
+];
+const LAYERS = [
+  { v: "none",   l: "타임아웃 없음",
+    s: "M5-4 상태. 예외는 잡지만 안 끝나는 건 못 잡는다" },
+  { v: "outside",l: "① invoke() 바깥",
+    s: "그래프 전체를 하나로 재고 넘으면 포기한다" },
+  { v: "node",   l: "② 노드 밖 — add_node(timeout=)",
+    s: "LangGraph 가 노드마다 재고 <code>NodeTimeoutError</code> 를 던진다" },
+  { v: "in",     l: "③ 노드 안 — 호출 자체에",
+    s: "HTTP 클라이언트의 <code>timeout=</code>. 소켓을 닫는다" },
+];
+
+const SCEN = [
+  { t: "평범한 PR", n: "특별한 게 없다. 넷 다 평소 지연.", ov: {} },
+  { t: "diff 400줄", n: "testing 이 오래 걸린다 — 2.4초.", ov: { testing: 2.4 } },
+  { t: "프록시가 죽었다", n: "security 가 <b>응답을 안 준다.</b> 언제 올지 모른다.", ov: { security: INF } },
+  { t: "문서가 많은 PR", n: "docs 가 1.6초.", ov: { docs: 1.6 } },
+  { t: "둘이 느리다", n: "quality 1.9초 · docs 1.2초.", ov: { quality: 1.9, docs: 1.2 } },
+  { t: "호출 한도에 걸림", n: "quality 가 백오프로 2.8초 기다린다.", ov: { quality: 2.8 } },
+  { t: "완전 정지", n: "testing 이 <b>영영 안 돌아온다.</b>", ov: { testing: INF } },
+  { t: "평범한 PR", n: "또 평범하다. 설정을 바꿔볼 기회.", ov: {} },
+  { t: "살짝 느림", n: "security 1.1초. 나머지는 평소대로.", ov: { security: 1.1 } },
+  { t: "무응답 + 느림", n: "docs 가 <b>응답 없음</b>, testing 1.5초.", ov: { docs: INF, testing: 1.5 } },
+  { t: "전부 느리다", n: "넷 다 평소의 2.5배 (1.5·1.0·2.0·0.75초).", ov: { security: 1.5, quality: 1.0, testing: 2.0, docs: 0.75 } },
+  { t: "마지막 PR", n: "quality 가 3.0초. 여기서 끝난다.", ov: { quality: 3.0 } },
+];
+
+/* ── 규칙 ─────────────────────────────────────────────────── */
+function simulate(cfg, scen) {
+  const d = Object.assign({}, BASE, scen.ov);
+
+  // 실측 ② — 동기 노드에 노드-밖 타임아웃은 compile 에서 거부된다
+  if (cfg.layer === "node" && cfg.impl === "sync") {
+    return { compileError: true, d };
+  }
+
+  const T = cfg.layer === "none" ? INF : cfg.T;
+
+  // 노드별 타임아웃이 실제로 발화하는가
+  //   ③ (노드 안 = 소켓)  → 구현 방식과 무관하게 먹는다
+  //   ② (노드 밖)         → asyncio 취소에 의존 → block 이면 안 먹는다 (실측 ③ 아랫줄)
+  const perNode = cfg.layer === "in" ? true
+                : cfg.layer === "node" ? (cfg.impl === "async")
+                : false;
+
+  const rows = AG.map(a => {
+    const real = d[a];
+    const cut = perNode && real > T;
+    return { a, real, cut, end: cut ? T : real };
+  });
+
+  let status, findings, failed = [], elapsed, zombie = false;
+
+  if (cfg.layer === "outside") {
+    const slowest = Math.max.apply(null, rows.map(r => r.real));
+    if (slowest > T) {
+      // 실측 ④ 의 확대판 — 이미 끝난 노드의 결과까지 통째로 버려진다
+      status = "crashed"; findings = 0; failed = []; elapsed = T;
+      zombie = (cfg.impl === "sync");   // 실측 ① — 동기면 그래프는 계속 돈다
+    } else {
+      status = "done"; findings = 4; elapsed = slowest;
+    }
+  } else {
+    const stuck = rows.filter(r => !r.cut && r.real === INF);
+    if (stuck.length) {
+      status = "hung"; findings = 0; failed = []; elapsed = INF;
+    } else if (cfg.layer === "node" && rows.some(r => r.cut)) {
+      // 실측 ④ — NodeTimeoutError 는 노드 밖에서 나서 우리 except 를 비껴간다
+      status = "crashed"; findings = 0; failed = []; elapsed = T;
+    } else {
+      status = "done";
+      findings = rows.filter(r => !r.cut).length;
+      failed = rows.filter(r => r.cut).map(r => r.a);
+      elapsed = Math.max.apply(null, rows.map(r => r.end));
+    }
+  }
+
+  // 거짓 실패 — 실제로는 끝났을 노드를 우리가 잘라놓고 "실패"로 기록한 것
+  const falseFails = rows.filter(r => r.cut && r.real !== INF).map(r => r.a);
+  // 진짜 못 본 것 — 무한 대기라서 잘린 것 (기록이 정직하다)
+  const trueFails = rows.filter(r => r.cut && r.real === INF).map(r => r.a);
+  // 아무도 안 봤는데 그 사실이 어디에도 안 남은 노드 (G2)
+  const silent = (status === "crashed" || status === "hung")
+    ? rows.filter(r => true).map(r => r.a) : [];
+
+  return { rows, status, findings, failed, elapsed, zombie, falseFails, trueFails, silent, T, perNode, d };
+}
+
+/* ── 점수: 비대칭이 교재다 ───────────────────────────────────
+   최악은 "아무도 안 봤는데 그게 어디에도 안 남는 것"(G2).
+   그래서 hung(-30) > crashed(-20) > 거짓 실패(-8) 순으로 아프다.
+   진짜 못 본 걸 정직하게 기록한 것은 벌점이 없다 — 그게 우리가 원하는 행동이다.
+   ───────────────────────────────────────────────────────── */
+function score(r) {
+  if (r.status === "hung")    return { trust: -30, budget: 12, why: "무한 대기 — 워커가 점유된 채 아무 신호도 안 남았다" };
+  if (r.status === "crashed") return { trust: -20, budget: r.elapsed + (r.zombie ? 8 : 0),
+                                       why: "그래프 전체 실패 — 이미 끝난 노드의 findings 도 버려졌다" };
+  let t = 5;
+  t -= 8 * r.falseFails.length;
+  t += 2 * r.trueFails.length;   // 정직한 부분 실패는 오히려 이득
+  return { trust: t, budget: r.elapsed, why: null };
+}
+
+/* ── 게임 상태 ───────────────────────────────────────────── */
+const G = { round: 0, trust: 100, budget: 40, streak: 0, over: false, phase: "predict" };
+let cfg = { impl: "sync", layer: "none", T: 1.0 };
+let scen = SCEN[0], last = null, anim = null;
+
+const $ = id => document.getElementById(id);
+const fx = (n, k) => (n === INF ? "∞" : n.toFixed(k === undefined ? 2 : k));
+
+function drawHud() {
+  $("hRound").textContent = (G.round + 1) + " / " + SCEN.length;
+  $("hTrust").textContent = Math.max(0, Math.round(G.trust));
+  $("hBudget").textContent = Math.max(0, G.budget).toFixed(1) + "초";
+  $("hStreak").textContent = G.streak;
+  const tb = $("hTrustBar"), bb = $("hBudgetBar");
+  tb.firstElementChild.style.width = Math.max(0, Math.min(100, G.trust)) + "%";
+  bb.firstElementChild.style.width = Math.max(0, Math.min(100, G.budget / 40 * 100)) + "%";
+  tb.classList.toggle("low", G.trust < 40);
+  bb.classList.toggle("low", G.budget < 12);
+}
+
+function drawOpts() {
+  $("implOpts").innerHTML = IMPLS.map(o =>
+    `<label class="opt ${cfg.impl === o.v ? "sel" : ""}" data-k="impl" data-v="${o.v}">
+       <span class="mono">${o.l}</span><span class="sub">${o.s}</span></label>`).join("");
+  $("layerOpts").innerHTML = LAYERS.map(o =>
+    `<label class="opt ${cfg.layer === o.v ? "sel" : ""}" data-k="layer" data-v="${o.v}">
+       <span class="mono">${o.l}</span><span class="sub">${o.s}</span></label>`).join("");
+  document.querySelectorAll(".opt").forEach(el => el.addEventListener("click", () => {
+    if (G.phase === "running" || G.over) return;
+    cfg[el.dataset.k] = el.dataset.v;
+    drawOpts(); resetRound();
+  }));
+}
+
+function drawCard() {
+  $("cardT").innerHTML = "PR #" + (G.round + 1) + " — " + scen.t;
+  $("cardN").innerHTML = scen.n;
+}
+
+/* ── 타임라인 캔버스 ─────────────────────────────────────── */
+const cv = $("cv"), ctx = cv.getContext("2d");
+const PAD_L = 96, PAD_R = 30, PAD_T = 26, ROW = 46, SPAN = 3.2;
+const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+const xOf = t => PAD_L + Math.min(t, SPAN) / SPAN * (cv.width - PAD_L - PAD_R);
+
+function drawTimeline(r, now) {
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  const fg = css("--fg"), muted = css("--muted"), rule = css("--rule"),
+        ok = css("--ok"), acc = css("--accent"), live = css("--live"), dead = css("--dead");
+  ctx.font = "13px ui-monospace, Menlo, monospace";
+  ctx.textBaseline = "middle";
+
+  // 눈금
+  ctx.strokeStyle = rule; ctx.fillStyle = muted; ctx.lineWidth = 1;
+  for (let s = 0; s <= SPAN; s += 0.5) {
+    const x = xOf(s);
+    ctx.beginPath(); ctx.moveTo(x, PAD_T - 8); ctx.lineTo(x, PAD_T + ROW * 5 + 6); ctx.stroke();
+    ctx.textAlign = "center"; ctx.fillText(s.toFixed(1) + "s", x, PAD_T - 16);
+  }
+  if (!r) {
+    ctx.textAlign = "left"; ctx.fillStyle = muted;
+    ctx.fillText("설정을 고르고 예측한 다음 돌린다.", PAD_L, PAD_T + ROW * 2);
+    return;
+  }
+
+  r.rows.forEach((row, i) => {
+    const y = PAD_T + i * ROW + 14;
+    ctx.textAlign = "right"; ctx.fillStyle = fg;
+    ctx.fillText(row.a, PAD_L - 10, y);
+
+    const shown = Math.min(now, row.end);
+    // 실제로 반환된 구간
+    ctx.fillStyle = row.cut ? acc : ok;
+    ctx.globalAlpha = .85;
+    ctx.fillRect(PAD_L, y - 9, Math.max(0, xOf(shown) - PAD_L), 18);
+    ctx.globalAlpha = 1;
+
+    // 실측 ① — 포기한 뒤에도 계속 도는 구간
+    if (row.cut && now > row.end) {
+      const to = Math.min(now, row.real === INF ? SPAN : row.real);
+      ctx.save();
+      ctx.setLineDash([4, 3]); ctx.strokeStyle = dead; ctx.lineWidth = 8;
+      ctx.beginPath(); ctx.moveTo(xOf(row.end), y); ctx.lineTo(xOf(to), y); ctx.stroke();
+      ctx.restore();
+      if (now >= (row.real === INF ? SPAN : row.real) - 0.02) {
+        ctx.textAlign = "left"; ctx.fillStyle = dead; ctx.font = "11px ui-monospace, Menlo, monospace";
+        ctx.fillText("여전히 돌고 있다 · cancel() → False", xOf(row.end) + 6, y - 18);
+        ctx.font = "13px ui-monospace, Menlo, monospace";
+      }
+    }
+    // 안 끝나는 노드 (타임아웃도 안 먹은 경우)
+    if (!row.cut && row.real === INF) {
+      ctx.save();
+      ctx.setLineDash([4, 3]); ctx.strokeStyle = acc; ctx.lineWidth = 8;
+      ctx.beginPath(); ctx.moveTo(PAD_L, y); ctx.lineTo(xOf(Math.min(now, SPAN)), y); ctx.stroke();
+      ctx.restore();
+      if (now >= SPAN) {
+        ctx.textAlign = "right"; ctx.fillStyle = acc; ctx.font = "11px ui-monospace, Menlo, monospace";
+        ctx.fillText("안 끝남 →", cv.width - 4, y - 18);
+        ctx.font = "13px ui-monospace, Menlo, monospace";
+      }
+    }
+  });
+
+  // 타임아웃 선
+  if (r.T !== INF && r.T <= SPAN) {
+    ctx.save();
+    ctx.setLineDash([3, 3]); ctx.strokeStyle = acc; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(xOf(r.T), PAD_T - 6); ctx.lineTo(xOf(r.T), PAD_T + ROW * 5); ctx.stroke();
+    ctx.restore();
+    ctx.textAlign = "left"; ctx.fillStyle = acc; ctx.font = "11px ui-monospace, Menlo, monospace";
+    ctx.fillText("timeout " + r.T.toFixed(1) + "s", xOf(r.T) + 4, PAD_T + ROW * 5 + 2);
+    ctx.font = "13px ui-monospace, Menlo, monospace";
+  }
+
+  // aggregate — 배리어
+  const y = PAD_T + 4 * ROW + 14;
+  ctx.textAlign = "right"; ctx.fillStyle = fg;
+  ctx.fillText("aggregate", PAD_L - 10, y);
+  if (r.status === "done" && now >= r.elapsed) {
+    ctx.fillStyle = live;
+    ctx.fillRect(xOf(r.elapsed), y - 9, Math.max(6, xOf(r.elapsed + 0.12) - xOf(r.elapsed)), 18);
+    ctx.textAlign = "left"; ctx.fillStyle = muted; ctx.font = "11px ui-monospace, Menlo, monospace";
+    ctx.fillText("넷이 다 닫혀서 섰다 (" + r.elapsed.toFixed(2) + "s)", xOf(r.elapsed) + 14, y);
+  } else if (now >= SPAN || (r.T !== INF && now >= r.T)) {
+    ctx.textAlign = "left"; ctx.fillStyle = acc; ctx.font = "12px ui-monospace, Menlo, monospace";
+    ctx.fillText(r.status === "hung" ? "영영 서지 못한다 — 배리어가 안 닫혔다"
+                                     : "서지 못했다 — 그래프가 밖으로 터졌다", PAD_L + 6, y);
+  }
+  ctx.font = "13px ui-monospace, Menlo, monospace";
+}
+
+/* ── 예측 ───────────────────────────────────────────────── */
+function label(r) {
+  if (r.compileError) return "compile 거부 · 돌지도 못함";
+  const st = { done: "done", crashed: "터짐", hung: "안 끝남" }[r.status];
+  return st + " · findings " + r.findings + " · failed " + r.failed.length + "명";
+}
+function askPrediction(r) {
+  const right = label(r);
+  const pool = new Set([right]);
+  ["done · findings 4 · failed 0명", "done · findings 3 · failed 1명",
+   "터짐 · findings 0 · failed 0명", "안 끝남 · findings 0 · failed 0명",
+   "compile 거부 · 돌지도 못함", "done · findings 2 · failed 2명"].forEach(o => pool.add(o));
+  const others = [...pool].filter(o => o !== right).sort(() => Math.random() - .5).slice(0, 2);
+  const opts = [right].concat(others).sort(() => Math.random() - .5);
+  $("pred").style.display = "block";
+  $("predStreak").textContent = "연속 " + G.streak;
+  $("predopts").innerHTML = opts.map(o => `<li data-v="${o}">${o}</li>`).join("");
+  $("predopts").querySelectorAll("li").forEach(li => li.addEventListener("click", () => {
+    if (li.classList.contains("locked")) return;
+    const good = li.dataset.v === right;
+    $("predopts").querySelectorAll("li").forEach(x => {
+      x.classList.add("locked");
+      if (x.dataset.v === right) x.classList.add("correct");
+      else if (x === li) x.classList.add("wrong");
+    });
+    G.streak = good ? G.streak + 1 : 0;
+    drawHud();
+    play(r, good);
+  }));
+}
+
+/* ── 실행 ───────────────────────────────────────────────── */
+function play(r, predOk) {
+  G.phase = "running";
+  $("runbtn").disabled = true; $("skipbtn").disabled = true;
+  if (r.compileError) { finish(r, predOk); return; }
+  const cap = r.status === "hung" ? SPAN
+            : Math.max.apply(null, r.rows.map(x => x.real === INF ? SPAN : Math.max(x.real, x.end))) + 0.25;
+  const t0 = performance.now();
+  cancelAnimationFrame(anim);
+  (function step() {
+    const now = (performance.now() - t0) / 1000;
+    drawTimeline(r, now);
+    if (now < cap) anim = requestAnimationFrame(step);
+    else { drawTimeline(r, cap); finish(r, predOk); }
+  })();
+}
+
+function finish(r, predOk) {
+  G.phase = "done";
+  let s;
+  if (r.compileError) {
+    s = { trust: 0, budget: 1, why: null };
+    $("res").innerHTML = `<div class="row"><span>결과</span><b>compile 거부</b></div>
+      <div class="row"><span>돌기는 했나</span><b>아니오</b></div>`;
+    $("verdict").innerHTML = `<div class="verdict warn"><b>ValueError — 돌려보기도 전에 막혔다</b>
+      <span class="mono" style="font-size:.78rem">Node timeouts are only supported for async nodes because
+      sync Python execution cannot be safely cancelled in-process.</span><br><br>
+      벌점은 없다. <b>라이브러리가 우리 대신 거짓말을 거절한 것</b>이다 —
+      동기 노드에 타임아웃을 받아줬으면 "걸었으니 안전하다"고 믿은 채 아무 일도 안 일어났을 것이다.</div>`;
+  } else {
+    s = score(r);
+    const stTag = r.status === "done"
+      ? `<span class="tag ok">done</span>`
+      : `<span class="tag bad">${r.status === "hung" ? "안 끝남" : "터짐"}</span>`;
+    $("res").innerHTML =
+      `<div class="row"><span>status</span><b>${stTag}</b></div>
+       <div class="row"><span>걸린 시간</span><b>${r.elapsed === INF ? "∞ (워커 점유)" : r.elapsed.toFixed(2) + "초"}</b></div>
+       <div class="row"><span>findings</span><b>${r.findings}개</b></div>
+       <div class="row"><span>failed_agents</span><b>${r.failed.length ? "[" + r.failed.join(", ") + "]" : "[]"}</b></div>
+       ${r.zombie ? `<div class="row"><span>그래프</span><b class="mono" style="color:var(--accent)">좀비 — 계속 돌고 있다</b></div>` : ""}`;
+    $("verdict").innerHTML = verdictHtml(r, s);
+  }
+
+  G.trust = Math.min(100, G.trust + s.trust);
+  G.budget -= s.budget;
+  drawHud();
+  $("explain").innerHTML = explainHtml(r, s, predOk);
+
+  if (G.trust <= 0) return gameOver("리뷰 신뢰도가 0이 됐다 — 이 봇은 꺼졌다.");
+  if (G.budget <= 0) return gameOver("워커 시간 예산이 바닥났다 — 큐가 밀려 이벤트가 유실됐다.");
+  if (G.round >= SCEN.length - 1) return gameOver(null);
+  const btn = document.createElement("button");
+  btn.className = "run"; btn.textContent = "다음 PR →";
+  btn.style.marginTop = ".8rem";
+  btn.addEventListener("click", nextRound);
+  $("verdict").appendChild(btn);
+}
+
+function verdictHtml(r, s) {
+  if (r.status === "hung") return `<div class="verdict bad"><b>최악의 경우 — G2 가 그대로 일어났다</b>
+    노드 ${r.rows.filter(x => x.real === INF).map(x => x.a).join(", ")} 이 안 끝나서
+    <b>배리어가 영영 안 닫힌다.</b> 이미 끝난 나머지도 aggregate 로 못 간다.<br>
+    그리고 <b>실패로 보이지도 않는다</b> — 에러도 없고 <code>failed_agents</code> 도 비어 있다.
+    "critical 없음"과 "아무도 안 봄"이 여기서 완전히 뭉개진다.</div>`;
+  if (r.status === "crashed") return `<div class="verdict bad"><b>부분 실패가 전체 실패로 승격됐다</b>
+    ${r.rows.filter(x => !x.cut && x.end <= r.T).length}개 노드는 <b>이미 끝나 있었는데</b> 그 findings 까지 버려졌다.
+    그리고 <code>failed_agents</code> 가 비어 있다 — 누가 못 봤는지조차 안 남는다.<br>
+    ${r.zombie ? `게다가 동기라서 <b>그래프는 지금도 돌고 있다</b>(실측 ①). 우리만 기다리기를 포기했다.` :
+      `<span class="mono" style="font-size:.78rem">NodeTimeoutError</span> 는 <b>노드 밖</b>에서 났다 —
+       <code>_run_specialist</code> 의 <code>try</code> 는 노드 <b>안</b>에 있으니 통째로 비껴간다.`}</div>`;
+  if (r.falseFails.length) return `<div class="verdict warn"><b>거짓 실패 — 멀쩡한 노드를 실패로 기록했다</b>
+    ${r.falseFails.map(a => `${a}(${fx(r.d[a], 1)}초)`).join(", ")} 는 타임아웃 ${r.T.toFixed(1)}초보다 느렸을 뿐
+    <b>결국은 답을 냈을 것</b>이다. 게이트는 이걸 "커버 안 됨"으로 읽는다.<br>
+    타임아웃이 짧으면 없는 문제를 만들어낸다.</div>`;
+  if (r.trueFails.length) return `<div class="verdict ok"><b>이게 우리가 원한 모양이다</b>
+    안 끝나는 ${r.trueFails.join(", ")} 를 <b>값으로</b> 바꿨다 —
+    예외가 <code>try</code> 안에서 나서 <code>failed_agents</code> 에 이름이 남았고,
+    나머지 ${r.findings}개의 findings 로 <b>끝까지 갔다.</b><br>
+    게이트(M8)가 "누가 못 봤나"를 읽을 수 있다.</div>`;
+  return `<div class="verdict ok"><b>넷 다 통과 (${r.elapsed.toFixed(2)}초)</b>
+    지연 합은 ${AG.reduce((s2, a) => s2 + r.d[a], 0).toFixed(2)}초인데 가장 느린 하나만큼 걸렸다 — <b>병렬</b>이다.</div>`;
+}
+
+function explainHtml(r, s, predOk) {
+  const bits = [];
+  bits.push(`<p><b>${predOk ? "예측 적중" : "예측이 빗나갔다"}</b> · 신뢰도 ${s.trust >= 0 ? "+" : ""}${s.trust} ·
+    예산 −${s.budget === INF ? "∞" : s.budget.toFixed(1)}초</p>`);
+  if (r.compileError) {
+    bits.push(`<p><b>왜 compile 에서 막히나</b>: 동기 함수는 도는 도중에 안전하게 취소할 수 없다.
+      LangGraph 는 <code>timeout=</code> 을 받아놓고 아무 일도 안 하는 대신 <b>계약을 거절</b>한다.
+      Lesson 01 의 "부탁하지 말고 강제하라"와 같은 사고방식이다.</p>`);
+    bits.push(`<p>지금 우리 <code>langgraph_engine.py</code> 의 노드 넷은 전부 <code>def</code> 다.
+      그래서 <b>② 는 우리에게 애초에 선택지가 아니다.</b></p>`);
+    return bits.join("");
+  }
+  if (cfg.impl === "block" && cfg.layer === "node") {
+    bits.push(`<p><b>타임아웃을 걸었는데 아무 일도 안 일어났다.</b> 노드가 <code>async</code> 라도
+      안에서 <code>time.sleep()</code> 을 하면 GIL 을 붙잡고 있어 취소가 끼어들 틈이 없다.
+      실측: 같은 <code>timeout=0.5</code> 로 <code>await asyncio.sleep(3)</code> 은 0.51초에 잘렸고,
+      <code>time.sleep(3)</code> 은 <b>3.02초에 그냥 성공</b>했다. 에러도 경고도 없다.</p>`);
+  }
+  bits.push(`<p><b>층이 실패의 모양을 정한다.</b> 몇 초냐가 아니라 <b>예외가 어디서 나느냐</b>가 갈림길이다 —
+    노드 <b>안</b>에서 나야 <code>try/except</code> 가 받아 <code>failed_agents</code> 라는 <b>값</b>이 된다.
+    노드 <b>밖</b>에서 나면 우리 <code>except</code> 를 비껴가 그래프가 통째로 죽는다.</p>`);
+  if (r.rows.some(x => x.cut)) {
+    bits.push(`<p><b>타임아웃 ≠ 취소.</b> 잘린 노드의 회색 점선을 보라 —
+      우리가 포기한 뒤에도 저쪽은 계속 돈다. 실측: <code>fut.result(timeout=0.5)</code> 가
+      0.50초에 <code>TimeoutError</code> 를 냈지만 그 함수는 2초를 다 채우고 마지막 줄까지 실행됐다
+      (<code>fut.cancel()</code> → <code>False</code>).
+      <b>그래서 재시도는 같은 일을 두 번 시키는 것일 수 있다 — INV-2 가 여기 걸린다.</b></p>`);
+  }
+  return bits.join("");
+}
+
+function gameOver(msg) {
+  G.over = true;
+  const win = !msg;
+  $("over").innerHTML = `<div class="gameover" style="${win ? "border-color:var(--ok);background:var(--ok-soft)" : ""}">
+    <h2>${win ? "12건을 살아남았다" : "게임 오버"}</h2>
+    <p>${msg || "신뢰도 " + Math.round(G.trust) + " · 남은 예산 " + G.budget.toFixed(1) + "초 · 예측 연속 최고 " + G.streak}</p>
+    <button class="run" onclick="location.reload()">다시</button></div>`;
+  $("runbtn").disabled = true; $("skipbtn").disabled = true;
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+/* ── 라운드 ─────────────────────────────────────────────── */
+function resetRound() {
+  G.phase = "predict";
+  $("pred").style.display = "none";
+  $("res").innerHTML = "—"; $("verdict").innerHTML = "";
+  $("explain").innerHTML = `<p class="note">설정이 바뀌었다. <b>돌리기 전에 예측할 것.</b></p>`;
+  $("runbtn").disabled = false; $("skipbtn").disabled = false;
+  cancelAnimationFrame(anim);
+  drawTimeline(null, 0);
+}
+function nextRound() {
+  G.round++;
+  scen = SCEN[G.round];
+  drawCard(); drawHud(); resetRound();
+}
+
+$("tslider").addEventListener("input", e => {
+  cfg.T = parseFloat(e.target.value);
+  $("tval").textContent = cfg.T.toFixed(1) + "초";
+  if (G.phase !== "running") resetRound();
+});
+$("runbtn").addEventListener("click", () => {
+  if (G.over || G.phase === "running") return;
+  last = simulate(cfg, scen);
+  askPrediction(last);
+  $("runbtn").disabled = true;
+});
+$("skipbtn").addEventListener("click", () => {
+  if (G.over || G.phase === "running") return;
+  G.budget -= 3; drawHud();
+  $("res").innerHTML = `<div class="row"><span>결과</span><b>사람 큐로 넘김</b></div>
+    <div class="row"><span>findings</span><b>0개</b></div>`;
+  $("verdict").innerHTML = `<div class="verdict"><b>안전하지만 아무것도 안 배운다</b>
+    확신이 없으면 넘기는 건 이 프로젝트의 제1원칙(선별)에 맞다. 다만 예산은 나간다.</div>`;
+  $("explain").innerHTML = `<p class="note">넘겼다. 설정을 바꿔서 다음 PR 을 노려볼 것.</p>`;
+  $("runbtn").disabled = true; $("skipbtn").disabled = true;
+  if (G.budget <= 0) return gameOver("워커 시간 예산이 바닥났다 — 큐가 밀려 이벤트가 유실됐다.");
+  if (G.round >= SCEN.length - 1) return gameOver(null);
+  const btn = document.createElement("button");
+  btn.className = "run"; btn.textContent = "다음 PR →"; btn.style.marginTop = ".8rem";
+  btn.addEventListener("click", nextRound);
+  $("verdict").appendChild(btn);
+});
+
+drawOpts(); drawCard(); drawHud(); resetRound();
+</script>
+</body>
+</html>
