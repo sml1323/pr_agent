@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>demo_m5 실행 추적</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --ink:#1c2330; --sub:#5b6472; --line:#e3e7ee;
+    --code-bg:#0f1420; --code-ink:#d5dbe8; --code-dim:#6b7a94; --hl:#2b3a5e; --hl-edge:#7aa2ff;
+    --accent:#2f6fed; --ok:#1a9c6b; --bad:#d84f4f; --warn:#c98a1b;
+    --lane:#e9edf4; --lane-fill:#7aa2ff; --lane-done:#39b98a; --lane-dead:#d84f4f; --lane-fail:#c98a1b;
+    --chip:#eef2f9;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0e1117; --panel:#161b24; --ink:#e6eaf2; --sub:#94a0b4; --line:#242c3a;
+      --code-bg:#0a0e16; --code-ink:#cfd6e4; --code-dim:#5c6b85; --hl:#22314f; --hl-edge:#7aa2ff;
+      --lane:#222a38; --chip:#1d2532;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.65 -apple-system,"Apple SD Gothic Neo","Pretendard",Segoe UI,sans-serif}
+  .wrap{max-width:1180px;margin:0 auto;padding:20px 18px 60px}
+  h1{font-size:21px;margin:6px 0 2px}
+  .sub{color:var(--sub);font-size:13.5px;margin-bottom:14px}
+  .tabs{display:flex;gap:8px;margin:10px 0 14px;flex-wrap:wrap}
+  .tab{border:1px solid var(--line);background:var(--panel);color:var(--ink);
+       padding:7px 14px;border-radius:9px;cursor:pointer;font-size:13.5px}
+  .tab.on{border-color:var(--accent);color:var(--accent);font-weight:700}
+  .grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:14px}
+  @media(max-width:900px){.grid{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .ptitle{font-size:12px;letter-spacing:.4px;color:var(--sub);padding:8px 12px;border-bottom:1px solid var(--line);
+          display:flex;justify-content:space-between;align-items:center}
+  .file{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--accent)}
+  pre{margin:0;padding:10px 0;background:var(--code-bg);color:var(--code-ink);
+      font:12.5px/1.55 ui-monospace,Menlo,Consolas,monospace;overflow-x:auto}
+  .ln{display:block;padding:0 14px 0 10px;white-space:pre}
+  .ln.hl{background:var(--hl);border-left:3px solid var(--hl-edge);padding-left:7px}
+  .ln .c{color:var(--code-dim)}
+  .state{padding:12px 14px;display:flex;flex-direction:column;gap:12px}
+  .clock{font-family:ui-monospace,monospace;font-size:13px;color:var(--accent);font-weight:700}
+  .procs{display:flex;gap:10px;flex-wrap:wrap}
+  .proc{border:1px solid var(--line);border-radius:10px;padding:8px 12px;min-width:150px;flex:1}
+  .proc b{font-size:13px}
+  .proc .st{font-size:12px;color:var(--sub)}
+  .proc.dead{border-color:var(--bad)} .proc.dead .st{color:var(--bad)}
+  .proc.live{border-color:var(--ok)}
+  .lanes{display:flex;flex-direction:column;gap:6px}
+  .lane{display:grid;grid-template-columns:64px 1fr 84px;gap:8px;align-items:center;font-size:12px}
+  .lane .nm{font-family:ui-monospace,monospace}
+  .bar{height:12px;background:var(--lane);border-radius:6px;overflow:hidden;position:relative}
+  .fill{height:100%;border-radius:6px;background:var(--lane-fill);transition:width .25s}
+  .fill.done{background:var(--lane-done)} .fill.dead{background:var(--lane-dead)}
+  .fill.fail{background:var(--lane-fail)}
+  .lane .tag{color:var(--sub);text-align:right;font-family:ui-monospace,monospace;font-size:11px}
+  table.vars{width:100%;border-collapse:collapse;font-size:12.5px}
+  table.vars td{padding:3px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+  table.vars td:first-child{font-family:ui-monospace,monospace;color:var(--accent);white-space:nowrap;width:38%}
+  table.vars td:last-child{font-family:ui-monospace,monospace;word-break:break-all}
+  .boxlabel{font-size:11px;color:var(--sub);letter-spacing:.4px;margin-bottom:4px}
+  .sq{font:12px/1.6 ui-monospace,monospace;background:var(--chip);border-radius:8px;padding:8px 10px;
+      overflow-x:auto;white-space:pre}
+  .explain{margin-top:14px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;
+           font-size:14.5px}
+  .explain b{color:var(--accent)}
+  .explain .warn{color:var(--warn);font-weight:700}
+  .explain .ok{color:var(--ok);font-weight:700}
+  .explain .bad{color:var(--bad);font-weight:700}
+  .nav{display:flex;gap:10px;align-items:center;margin-top:12px}
+  button.nv{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:9px;
+            padding:9px 18px;font-size:14px;cursor:pointer}
+  button.nv:disabled{opacity:.35;cursor:default}
+  button.nv.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+  .prog{flex:1;height:6px;background:var(--lane);border-radius:3px;overflow:hidden}
+  .prog i{display:block;height:100%;background:var(--accent);transition:width .25s}
+  .stepno{font-size:12px;color:var(--sub);font-family:ui-monospace,monospace;white-space:nowrap}
+  kbd{background:var(--chip);border:1px solid var(--line);border-radius:5px;padding:0 6px;font-size:11px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>demo_m5.py 실행 추적 — 한 스텝씩</h1>
+  <div class="sub">M5 완료 판정 ①②③이 코드의 어느 줄에서, 변수가 어떻게 변하면서 통과하는지.
+    <kbd>←</kbd> <kbd>→</kbd> 로 이동 · 실측 2026-08-21 · langgraph 1.2.11</div>
+
+  <div class="tabs" id="tabs"></div>
+
+  <div class="grid">
+    <div class="panel">
+      <div class="ptitle"><span>코드</span><span class="file" id="fname"></span></div>
+      <pre id="code"></pre>
+    </div>
+    <div class="panel">
+      <div class="ptitle"><span>이 시점의 상태</span><span class="clock" id="clock"></span></div>
+      <div class="state" id="state"></div>
+    </div>
+  </div>
+
+  <div class="explain" id="explain"></div>
+
+  <div class="nav">
+    <button class="nv" id="prev">← 이전</button>
+    <div class="prog"><i id="bar"></i></div>
+    <span class="stepno" id="stepno"></span>
+    <button class="nv primary" id="next">다음 →</button>
+  </div>
+</div>
+
+<script>
+// ───────────────────────── 코드 발췌 (파일별) ─────────────────────────
+const CODE = {
+demo_par: {file:"scripts/demo_m5.py — scenario_parallel()", lines:[
+"def scenario_parallel() -> bool:",
+"    _reset_db()                        # sqlite 파일 삭제 — 백지에서",
+"    with _saver() as saver:            # SqliteSaver (컨텍스트 매니저)",
+"        engine = _engine(saver)        # 그래프 조립 + compile",
+"        t0 = time.perf_counter()",
+"        engine.run(KEY_PARALLEL, _diff())",
+"        elapsed = time.perf_counter() - t0",
+"        s = engine.get_state(KEY_PARALLEL)",
+"",
+"    serial_total = sum(_DELAYS.values())   # 직렬이면 2.1초",
+"    slowest = max(_DELAYS.values())        # 최장 노드 0.8초",
+"    parallel_ok = elapsed < slowest + 0.3  # ← 판정식 (B)",
+"    return parallel_ok and s[\"status\"] == \"done\" \\",
+"        and len(s[\"findings\"]) == 4",
+]},
+build: {file:"backend/orchestration/langgraph_engine.py — _build()", lines:[
+"graph = StateGraph(ReviewState)",
+"graph.add_node(\"security\", security_node)   # + quality/testing/docs",
+"graph.add_node(\"aggregate\", _aggregate)",
+"# 팬아웃 — START 에서 넷으로",
+"graph.add_edge(START, \"security\")           # ×4",
+"# 팬인 — 넷에서 aggregate 로",
+"graph.add_edge(\"security\", \"aggregate\")     # ×4",
+"graph.add_edge(\"aggregate\", END)",
+"compiled = graph.compile(checkpointer=self._checkpointer)",
+]},
+node: {file:"langgraph_engine.py — _call_agent() / _run_specialist()", lines:[
+"def _call_agent(agent_type):",
+"    hangs = agent_type in _hanging_agents()   # M5_HANG_AGENTS",
+"    started = time.monotonic()",
+"    while True:",
+"        elapsed = time.monotonic() - started",
+"        if not hangs and elapsed >= _DELAYS[agent_type]:",
+"            break                     # 일이 끝났다",
+"        if elapsed >= AGENT_TIMEOUT_SECONDS:   # 1.0초",
+"            raise openai.APITimeoutError(request=…)",
+"        time.sleep(_TICK)             # 0.02초씩 자며 마감 확인",
+"    return _dummy_finding(agent_type)",
+"",
+"def _run_specialist(agent_type, state):",
+"    try:",
+"        finding = _call_agent(agent_type)",
+"    except openai.OpenAIError as e:   # 바깥 탓",
+"        log.warning(e)                # 한 줄만",
+"        return {\"failed_agents\": [agent_type]}",
+"    except Exception as e:            # 내 탓 의심",
+"        log.exception(e)              # 스택트레이스",
+"        return {\"failed_agents\": [agent_type]}",
+"    return {\"findings\": [finding.model_dump()]}  # 쪽지",
+]},
+gstate: {file:"langgraph_engine.py — get_state()", lines:[
+"def get_state(self, review_key):",
+"    snapshot = self._graph.get_state(self._config(review_key))",
+"    defaults = {\"review_key\": review_key, \"diff\": \"\",",
+"                \"findings\": [], \"failed_agents\": []}",
+"    return {",
+"        **defaults,           # 기본값 먼저 깔고",
+"        **snapshot.values,    # 스냅샷이 있으면 덮는다",
+"        \"next_nodes\": list(snapshot.next),",
+"        \"status\": (\"not_started\" if snapshot.created_at is None",
+"                   else \"running\" if snapshot.next",
+"                   else \"done\"),",
+"    }",
+]},
+demo_kill: {file:"scripts/demo_m5.py — scenario_kill9()", lines:[
+"def scenario_kill9() -> bool:",
+"    _reset_db()",
+"    worker = subprocess.Popen(",
+"        [sys.executable, __file__, \"--child\", KEY_KILL9], …)",
+"    worker.stdout.readline()    # \"READY\" 를 기다린다 (함정 ④)",
+"    time.sleep(0.5)             # 그래프 0.5초 지점",
+"    alive = worker.poll() is None   # 살아있는지 먼저 (함정 ②)",
+"    worker.kill()               # SIGKILL — 가로채기 불가",
+"    rc = worker.wait()",
+"    with _saver() as saver:",
+"        engine = _engine(saver)",
+"        before = engine.get_state(KEY_KILL9)",
+"        engine.resume(KEY_KILL9)    # invoke(None) — 이어서",
+"        after = engine.get_state(KEY_KILL9)",
+"    return alive and rc == -9 \\",
+"        and after[\"status\"] == \"done\" and len(after[\"findings\"]) == 4",
+]},
+child: {file:"scripts/demo_m5.py — child()  (자식 프로세스)", lines:[
+"def child(review_key):",
+"    with _saver() as saver:",
+"        engine = _engine(saver)     # import+조립 ≈ 0.5초",
+"        print(\"READY\", flush=True)  # 여기부터가 그래프 시간",
+"        engine.run(review_key, _diff())",
+"        print(\"DONE\", flush=True)   # kill 되면 안 나온다",
+]},
+demo_hang: {file:"scripts/demo_m5.py — scenario_hang()", lines:[
+"def scenario_hang() -> bool:",
+"    _reset_db()",
+"    os.environ[\"M5_HANG_AGENTS\"] = \"security\"",
+"    try:",
+"        with _saver() as saver:",
+"            engine = _engine(saver)",
+"            engine.run(KEY_HANG, _diff())   # security 는 영영 안 온다",
+"            s = engine.get_state(KEY_HANG)",
+"    finally:",
+"        os.environ.pop(\"M5_HANG_AGENTS\", None)  # 다음에 새면 안 됨",
+"    return s[\"status\"] == \"done\" \\",
+"        and s[\"failed_agents\"] == [\"security\"] \\",
+"        and len(s[\"findings\"]) == 3",
+]},
+};
+
+// ───────────────────────── 상태 렌더 도우미 ─────────────────────────
+// lane: [이름, 진행률0~1, 상태(run|done|dead|fail|wait), 라벨]
+function lanes(arr){
+  return `<div><div class="boxlabel">스페셜리스트 4개 (지연: security 0.6 · quality 0.4 · testing 0.8 · docs 0.3)</div>
+  <div class="lanes">`+arr.map(([n,p,st,tag])=>{
+    const cls = st==="done"?"done":st==="dead"?"dead":st==="fail"?"fail":"";
+    return `<div class="lane"><span class="nm">${n}</span>
+      <div class="bar"><div class="fill ${cls}" style="width:${Math.round(p*100)}%"></div></div>
+      <span class="tag">${tag}</span></div>`;
+  }).join("")+`</div></div>`;
+}
+function vars(rows){
+  return `<div><div class="boxlabel">변수 / 반환값</div><table class="vars">`+
+    rows.map(([k,v])=>`<tr><td>${k}</td><td>${v}</td></tr>`).join("")+`</table></div>`;
+}
+function procs(arr){
+  return `<div><div class="boxlabel">프로세스</div><div class="procs">`+
+    arr.map(([nm,st,cls])=>`<div class="proc ${cls||""}"><b>${nm}</b><div class="st">${st}</div></div>`).join("")
+    +`</div></div>`;
+}
+function sq(text){
+  return `<div><div class="boxlabel">checkpoints.sqlite (체크포인터가 보는 것)</div><div class="sq">${text}</div></div>`;
+}
+
+// ───────────────────────── 스텝 데이터 ─────────────────────────
+const CH = [
+{name:"① 병렬", steps:[
+
+{code:"demo_par",hl:[1],clock:"—",
+ explain:"<b>백지에서 시작.</b> 이전 실행의 체크포인트가 남아 있으면 run() 이 새 리뷰가 아니라 끝난 리뷰 위에 이어 붙는다 — 그래서 시나리오마다 sqlite 파일을 지운다.",
+ state: procs([["부모 (데모)","실행 중","live"]]) + sq("(파일 없음)")},
+
+{code:"demo_par",hl:[2,3],clock:"—",
+ explain:"<b>saver 를 열고 엔진을 만든다.</b> <code>from_conn_string</code> 은 컨텍스트 매니저라 <code>with</code> 를 벗어나면 커넥션이 닫힌다 (checkpointer.py 함정 ①). 엔진 생성 = 그래프 <b>조립</b> — 아직 아무것도 실행되지 않는다.",
+ state: procs([["부모 (데모)","engine 조립 중","live"]]) + sq("(빈 파일 생성됨)")},
+
+{code:"build",hl:[4,6],clock:"—",
+ explain:"<b>설계도.</b> 팬아웃(START→4개)과 팬인(4개→aggregate)이 전부 평범한 add_edge 다. 엣지는 <b>\"어느 층에 서나\"</b>만 정한다 — superstep(층)은 설계도에 없고, invoke 할 때 실행이 긋는다 (Lesson 08).",
+ state: procs([["부모 (데모)","compile() 완료","live"]]) +
+   vars([["그래프","START → [security|quality|testing|docs] → aggregate → END"]])},
+
+{code:"demo_par",hl:[5],clock:"0.00초",
+ explain:"<b>run() 호출.</b> initial dict(4채널: review_key·diff·findings=[]·failed_agents=[])을 넣고 invoke. LangGraph 가 제일 먼저 하는 일은 <b>입력 체크포인트 기록</b> — 이게 있어야 죽어도 \"시작은 했다\"가 남는다.",
+ state: procs([["부모 (데모)","invoke 진입","live"]]) +
+   vars([["initial","{review_key, diff, findings: [], failed_agents: []}"]]) +
+   sq("checkpoint #1 (입력)\n  channel_values: 4채널 전부\n  next: security, quality, testing, docs")},
+
+{code:"node",hl:[1,2],clock:"0.00초",
+ explain:"<b>superstep 1 시작 — 넷이 동시에.</b> START 에서 나가는 엣지 4개가 같은 층이라, 스레드풀에서 4개 노드가 <b>병렬로</b> 뜬다. 각자 _call_agent 에 들어가 시계를 잰다. hangs=False (환경변수 비어 있음).",
+ state: lanes([["security",0,"run","0.0/0.6s"],["quality",0,"run","0.0/0.4s"],["testing",0,"run","0.0/0.8s"],["docs",0,"run","0.0/0.3s"]]) +
+   vars([["hangs","False (넷 다)"],["started","time.monotonic()"]])},
+
+{code:"node",hl:[3,4,5,9],clock:"0.15초",
+ explain:"<b>루프가 도는 이유.</b> <code>time.sleep(0.6)</code> 한 방이 아니라 0.02초씩 자면서 매번 두 조건을 확인한다: \"일이 끝났나\"(_DELAYS 도달)와 \"마감이 지났나\"(1.0초). 한 번에 다 자면 <span class='warn'>마감을 확인할 틈이 없다</span> — 타임아웃이 이 함수 <b>안</b>에서 터져야 try 가 잡는다 (Lesson 10).",
+ state: lanes([["security",0.25,"run","0.15/0.6s"],["quality",0.37,"run","0.15/0.4s"],["testing",0.19,"run","0.15/0.8s"],["docs",0.5,"run","0.15/0.3s"]])},
+
+{code:"node",hl:[5,6,10,21],clock:"0.30초",
+ explain:"<b>docs 가 첫 번째로 끝난다.</b> break → Finding 생성(여기서 Pydantic 이 INV-3 검증) → <code>model_dump()</code> 로 dict 로 눕혀서 <b>쪽지</b> {\"findings\": [dict]} 를 반환. 노드는 state 를 직접 안 고친다 — 쪽지는 <b>pending_writes</b> 로 저장되고, 채널에는 아직 커밋 안 됐다.",
+ state: lanes([["security",0.5,"run","0.30/0.6s"],["quality",0.75,"run","0.30/0.4s"],["testing",0.38,"run","0.30/0.8s"],["docs",1,"done","완료 ✓"]]) +
+   sq("checkpoint #1 (입력)\npending_writes:\n  docs → {findings: [1개]}")},
+
+{code:"node",hl:[21],clock:"0.60초",
+ explain:"<b>quality(0.4초)·security(0.6초)도 끝.</b> 쪽지가 셋 쌓였다. <span class='warn'>배리어</span>: testing(0.8초)이 안 끝나서 층이 아직 안 닫힌다 — 먼저 끝난 셋은 그냥 기다린다. \"엣지로 안 이어진 느린 노드까지 기다린다\"가 Lesson 08 실측.",
+ state: lanes([["security",1,"done","완료 ✓"],["quality",1,"done","완료 ✓"],["testing",0.75,"run","0.60/0.8s"],["docs",1,"done","완료 ✓"]]) +
+   sq("pending_writes:\n  docs, quality, security → 쪽지 3개")},
+
+{code:"demo_par",hl:[5],clock:"0.80초",
+ explain:"<b>층이 닫힌다.</b> testing 이 끝나는 순간 배리어 해제 → <b>리듀서</b>(operator.add)가 쪽지 4개를 채널에 합친다: findings 0+1+1+1+1=4. 이제야 채널에 커밋되고 checkpoint #2 가 기록된다. <b>가장 느린 노드(0.8초)가 층 전체의 시간을 정했다.</b>",
+ state: lanes([["security",1,"done","완료 ✓"],["quality",1,"done","완료 ✓"],["testing",1,"done","완료 ✓"],["docs",1,"done","완료 ✓"]]) +
+   vars([["findings 채널","[] + 쪽지4 → dict 4개"],["failed_agents","[]"]]) +
+   sq("checkpoint #2\n  findings: 4 · failed: []\n  next: aggregate")},
+
+{code:"demo_par",hl:[5,6],clock:"0.83초",
+ explain:"<b>superstep 2: aggregate.</b> M6 의 자리라 지금은 {} 반환 — 아무것도 안 바꾼다. END 도달, invoke 반환. elapsed = <b>0.83초</b> (그래프 0.8 + 오버헤드 0.03).",
+ state: vars([["elapsed","0.83"],["체크포인트","#3 (aggregate 뒤) · next: 없음"]])},
+
+{code:"gstate",hl:[1,4,5,6],clock:"0.83초",
+ explain:"<b>get_state.</b> 기본값을 먼저 깔고 스냅샷 values 로 덮는다 — 지금은 스냅샷이 꽉 차 있어서 기본값은 전부 덮인다. next 가 비고 created_at 이 있으니 status=<b>done</b>.",
+ state: vars([["s[\"status\"]","\"done\""],["s[\"findings\"]","dict 4개"],["s[\"failed_agents\"]","[]"],["s[\"next_nodes\"]","[]"]])},
+
+{code:"demo_par",hl:[9,10,11],clock:"—",
+ explain:"<b>판정식 (B).</b> 0.83 &lt; 0.8+0.3=1.1 → <span class='ok'>✅ 병렬</span>. 직렬이었다면 2.1초라 바로 걸린다. 배리어 성질(\"최장 노드가 층의 시간\")을 그대로 판정으로 쓴 것. <span class='warn'>한계도 정직하게</span>: 빠른 노드가 낀 부분 퇴화(0.3+0.4=0.7초)는 0.8초 아래 숨어서 시간으론 못 잡는다.",
+ state: vars([["serial_total","2.1"],["slowest","0.8"],["elapsed","0.83"],["parallel_ok","0.83 < 1.1 → True"],["판정 ①","✅"]])},
+]},
+
+{name:"② kill -9 재개", steps:[
+
+{code:"demo_kill",hl:[2,3],clock:"—",
+ explain:"<b>진짜 워커를 흉내내려면 진짜 프로세스가 필요하다.</b> 이 파일 자신을 <code>--child</code> 인자로 다시 실행한다 — 같은 파일이라 import 경로·sqlite 파일이 자동으로 일치. 이제 프로세스가 <b>둘</b>이다.",
+ state: procs([["부모 (데모)","Popen 직후","live"],["자식 (워커)","파이썬 시작 중…",""]]) + sq("(빈 파일)")},
+
+{code:"child",hl:[2,3],clock:"자식 −0.5초",
+ explain:"<b>함정 ④: 자식 시작에 ≈0.5초 걸린다</b> (langgraph import 0.34초 포함). Popen 직후 바로 sleep(0.5) 하면 그래프 0.08초 지점을 죽이는 꼴 — \"죽인 것\"과 \"시작도 안 한 것\"이 구분 안 된다. 그래서 자식이 조립을 끝내고 <b>READY</b> 를 찍을 때까지 부모는 readline 으로 기다린다.",
+ state: procs([["부모 (데모)","readline() 블록 — READY 대기","live"],["자식 (워커)","import + 그래프 조립","live"]])},
+
+{code:"child",hl:[3,4],clock:"그래프 0.00초",
+ explain:"<b>READY → 부모가 읽음 → 이제부터가 그래프 시간.</b> 자식은 run() 진입, 입력 체크포인트 기록, superstep 1 시작 — 시나리오 ①과 완전히 같은 실행이 자식 안에서 돈다.",
+ state: procs([["부모 (데모)","sleep(0.5) 시작","live"],["자식 (워커)","invoke — 4노드 병렬","live"]]) +
+   sq("checkpoint #1 (입력)\n  next: 4개 전부")},
+
+{code:"demo_kill",hl:[5],clock:"그래프 0.45초",
+ explain:"부모가 자는 동안 자식 안에서는: docs(0.3)·quality(0.4) <b>이미 끝나서 쪽지가 pending_writes 에 저장됐고</b>, security(0.6)·testing(0.8)은 아직 돌고 있다. 층은 안 닫혔으니 채널 커밋은 없다.",
+ state: lanes([["security",0.75,"run","0.45/0.6s"],["quality",1,"done","쪽지 저장됨"],["testing",0.56,"run","0.45/0.8s"],["docs",1,"done","쪽지 저장됨"]]) +
+   sq("checkpoint #1 (입력)\npending_writes:\n  docs → 쪽지 · quality → 쪽지")},
+
+{code:"demo_kill",hl:[6,7,8],clock:"그래프 0.50초",
+ explain:"<b>죽인다 — 근거와 함께.</b> 함정 ②: 이미 끝난 프로세스에 kill() 하면 조용히 아무 일도 없다. 그래서 <code>poll() is None</code>(alive=True)을 먼저 찍는다. SIGKILL 은 가로채기 불가(recon ③) — 자식은 정리할 기회 없이 <b>즉사</b>. returncode=-9.",
+ state: procs([["부모 (데모)","kill() 호출","live"],["자식 (워커)","💀 SIGKILL · rc=-9","dead"]]) +
+   lanes([["security",0.83,"dead","도중 사망"],["quality",1,"done","쪽지는 살았다"],["testing",0.62,"dead","도중 사망"],["docs",1,"done","쪽지는 살았다"]]) +
+   vars([["alive","True"],["rc","-9"]])},
+
+{code:"gstate",hl:[1,5,6,9],clock:"—",
+ explain:"<b>부모가 sqlite 를 다시 연다 = 재시작한 워커.</b> recon 실측: mid-superstep kill 은 채널 4개가 <b>다 차 있다</b> — get_state 가 pending_writes 까지 적용해서 findings 2개를 보여준다. next 가 남아 있으니 status=<b>running</b>. 키가 빠지는 건 체크포인트 0개일 때뿐(그건 not_started).",
+ state: procs([["부모 (데모)","get_state()","live"],["자식","💀","dead"]]) +
+   vars([["before[\"status\"]","\"running\""],["before[\"findings\"]","2개 (docs·quality)"],["before[\"next_nodes\"]","['security','testing']"]])},
+
+{code:"demo_kill",hl:[12],clock:"재개 0.00초",
+ explain:"<b>resume = invoke(None).</b> None 은 \"새로 시작하지 말고 이어서\". thread_id(review_key)로 체크포인트를 찾고, <b>pending_writes 에 쪽지가 있는 노드는 다시 안 돌린다</b> — docs·quality 의 LLM 호출 2회를 아꼈다. 이게 INV-2(같은 일 두 번 안 함)가 오케스트레이션 층에서 지켜지는 메커니즘.",
+ state: lanes([["security",0,"run","다시 실행"],["quality",1,"done","쪽지 재사용 ✓"],["testing",0,"run","다시 실행"],["docs",1,"done","쪽지 재사용 ✓"]])},
+
+{code:"demo_kill",hl:[13,14,15],clock:"재개 0.82초",
+ explain:"testing(0.8초)이 끝나며 층이 닫히고, 리듀서가 쪽지 4개(재사용 2 + 새로 2)를 합친다 → findings 4 → aggregate → <b>done</b>. 재개에 0.82초 — 전체를 다시 돌린 게 아니라 <b>남은 것만큼만</b> 걸렸다. <span class='ok'>✅ 판정 ②</span>: alive ∧ rc=-9 ∧ done ∧ findings 4.",
+ state: vars([["after[\"status\"]","\"done\""],["after[\"findings\"]","4개"],["재개 소요","0.82초"],["판정 ②","✅"]]) +
+   sq("checkpoint #2, #3 …\n  findings: 4 · next: 없음")},
+
+{code:"gstate",hl:[2,3,5],clock:"—",
+ explain:"<b>보너스 — 이 시나리오가 낳은 결정.</b> 아주 이른 시점(첫 체크포인트 기록 전)에 죽으면 snapshot.values 가 {} 라 키가 빠졌다. 호출부마다 .get 으로 막는 대신 <b>get_state 가 기본값을 깔아 항상 6개 키를 보장</b>하게 고쳤다 — 호출부는 앞으로 늘어난다(워커 복구, M9 대시보드). \"빈 findings\"의 두 뜻은 status=not_started 가 가른다 (Lesson 06).",
+ state: vars([["체크포인트 0개","values={} → 기본값이 나간다 · not_started"],["mid-superstep","4채널 다 있음 · running"],["\"반만 찬 dict\"","없다 (recon 실측)"]])},
+]},
+
+{name:"③ hang → 타임아웃", steps:[
+
+{code:"demo_hang",hl:[2],clock:"—",
+ explain:"<b>실패 주입.</b> 환경변수로 security 를 \"영영 안 돌아오는\" 노드로 만든다. M5_FAIL_AGENTS(raise)와 <b>다른 실패</b>다 — 이건 에러도 로그도 없이 그냥 안 돌아온다. except 가 잡을 게 없는 종류.",
+ state: vars([["M5_HANG_AGENTS","\"security\""],["의미","raise 가 아니라 무한 대기"]])},
+
+{code:"node",hl:[1,5],clock:"0.00초",
+ explain:"run() → superstep 1, 넷이 병렬로 뜬다. security 만 <code>hangs=True</code> — 루프의 첫 번째 탈출 조건(<code>not hangs and …</code>)이 <b>영영 참이 안 된다.</b>",
+ state: lanes([["security",0,"run","hangs=True"],["quality",0,"run","0.0/0.4s"],["testing",0,"run","0.0/0.8s"],["docs",0,"run","0.0/0.3s"]])},
+
+{code:"node",hl:[3,9],clock:"0.80초",
+ explain:"<b>셋은 다 끝났다. 그래프는 못 끝난다.</b> superstep 은 배리어라 security 가 안 돌아오면 나머지 셋의 쪽지도 채널에 커밋되지 못하고 층이 안 닫힌다. 타임아웃이 없다면 <span class='bad'>그래프 전체가 영원히 멈춘다</span> — M5-5 가 선택 사항이 아니었던 이유.",
+ state: lanes([["security",0.8,"fail","0.80s… 계속"],["quality",1,"done","쪽지 대기"],["testing",1,"done","쪽지 대기"],["docs",1,"done","쪽지 대기"]])},
+
+{code:"node",hl:[7,8],clock:"1.00초",
+ explain:"<b>마감.</b> elapsed ≥ 1.0 → <code>openai.APITimeoutError</code> 를 던진다. 내장 TimeoutError 가 아니라 <b>SDK 예외</b>인 게 핵심 — M6 에서 진짜 <code>OpenAI(timeout=…)</code> 이 던질 바로 그 타입이라, 루프가 SDK 호출로 통째로 바뀌어도 아래 except 를 안 고친다.",
+ state: lanes([["security",1,"fail","⏰ 1.0s 마감"],["quality",1,"done",""],["testing",1,"done",""],["docs",1,"done",""]]) +
+   vars([["던진 것","openai.APITimeoutError"],["request=","더미가 만듦 (진짜에선 SDK 가 채움)"]])},
+
+{code:"node",hl:[15,16,17],clock:"1.00초",
+ explain:"<b>실패가 값이 된다.</b> APITimeoutError 는 OpenAIError 의 자손 → <b>첫 번째 except</b>(바깥 탓)가 받는다. log.warning <b>한 줄</b> — 스택트레이스가 아니다. 내장 TimeoutError 를 던졌다면 두 번째 절(내 탓)이 잡아서 3주 뒤 로그가 우리 버그로 오염됐을 것 (Lesson 09). 반환: {\"failed_agents\": [\"security\"]} — 예외가 아니라 <b>쪽지</b>.",
+ state: vars([["로그","WARNING … Request timed out. (한 줄)"],["반환 쪽지","{failed_agents: ['security']}"]])},
+
+{code:"demo_hang",hl:[6,7],clock:"1.02초",
+ explain:"security 의 쪽지가 도착했으니 <b>배리어가 닫힌다</b> — 이번 층의 시간을 정한 건 최장 노드(0.8)가 아니라 <b>타임아웃(1.0)</b>이다. 리듀서: findings 3 + failed ['security'] → aggregate → done. <span class='warn'>주의</span>: 타임아웃은 취소가 아니다 — 진짜 API 라면 저쪽 서버는 계속 답을 만들고 있다 (M6 에서 재시도 + INV-2 가 다시 열리는 이유).",
+ state: lanes([["security",1,"fail","failed 로 기록"],["quality",1,"done",""],["testing",1,"done",""],["docs",1,"done",""]]) +
+   vars([["findings","3개"],["failed_agents","['security']"],["status","\"done\""]])},
+
+{code:"demo_hang",hl:[8,9,10,11,12],clock:"—",
+ explain:"<b>뒷정리와 판정.</b> finally 에서 환경변수를 반드시 걷는다 — 다음 시나리오·다음 실행에 새면 멀쩡한 데모가 깨진다. 판정: done ∧ failed==['security'] ∧ findings 3 → <span class='ok'>✅ 판정 ③</span>. 이게 G2 의 방어이기도 하다: 게이트(M8)는 failed_agents 를 보고 \"critical 없음\"과 \"security 관점은 아무도 안 봄\"을 가른다.",
+ state: vars([["판정 ③","✅ (데드락 없음)"],["G2 연결","failed_agents 가 게이트의 재료"],["최종","✅✅✅ → exit 0"]])},
+]},
+];
+
+// ───────────────────────── 렌더링 ─────────────────────────
+let ch = 0, idx = 0;
+const $ = id => document.getElementById(id);
+
+function renderTabs(){
+  $("tabs").innerHTML = CH.map((c,i)=>
+    `<button class="tab ${i===ch?'on':''}" onclick="go(${i},0)">${c.name}</button>`).join("");
+}
+function render(){
+  renderTabs();
+  const st = CH[ch].steps[idx];
+  const cv = CODE[st.code];
+  $("fname").textContent = cv.file;
+  $("code").innerHTML = cv.lines.map((l,i)=>{
+    const esc = l.replace(/&/g,"&amp;").replace(/</g,"&lt;");
+    const withC = esc.replace(/(#.*)$/, '<span class="c">$1</span>');
+    return `<span class="ln ${st.hl.includes(i)?'hl':''}">${withC||" "}</span>`;
+  }).join("");
+  $("clock").textContent = st.clock;
+  $("state").innerHTML = st.state;
+  $("explain").innerHTML = st.explain;
+  $("stepno").textContent = `${idx+1} / ${CH[ch].steps.length}`;
+  $("bar").style.width = ((idx+1)/CH[ch].steps.length*100)+"%";
+  $("prev").disabled = (idx===0 && ch===0);
+  $("next").textContent = (idx===CH[ch].steps.length-1)
+    ? (ch<CH.length-1 ? "다음 시나리오 →" : "처음으로 ↺") : "다음 →";
+}
+function go(c,i){ ch=c; idx=i; render(); }
+function next(){
+  if(idx < CH[ch].steps.length-1) idx++;
+  else if(ch < CH.length-1){ ch++; idx=0; }
+  else { ch=0; idx=0; }
+  render();
+}
+function prev(){
+  if(idx>0) idx--;
+  else if(ch>0){ ch--; idx=CH[ch].steps.length-1; }
+  render();
+}
+$("next").onclick = next; $("prev").onclick = prev;
+document.addEventListener("keydown", e=>{
+  if(e.key==="ArrowRight") next();
+  if(e.key==="ArrowLeft") prev();
+});
+render();
+</script>
+</body>
+</html>

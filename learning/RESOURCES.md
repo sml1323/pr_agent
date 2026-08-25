@@ -175,6 +175,16 @@
   Use for: M5-7 데모 · 앞으로 프로세스를 나누는 모든 실측.
   [reference/kill9-and-resume.html](reference/kill9-and-resume.html)
 
+- `langgraph.pregel.main::Pregel._prepare_state_snapshot` (설치된 langgraph 1.2.11)
+  **`if not saved: return StateSnapshot(values={}, next=(), ..., created_at=None, ...)`**
+  📌 실측(2026-08-21, `scratch/recon_get_state_after_kill.py`): 키가 빠지는 regime 은
+  **체크포인트 0개일 때뿐**이다 (values={} → 우리 `get_state()` 가 키 2개 · `not_started`).
+  mid-superstep kill(0.5초)은 채널 4개가 **다 차 있다** (pending_writes 까지 적용, 키 6개 · `running`).
+  "반만 찬 dict"라는 세 번째 regime 은 없다. ⚠️ 그래서 `not_started` 가 두 뜻이 된다 —
+  "정말 시작 전"과 "invoke 직후 첫 put 전에 죽음"이 관측상 구분 불가.
+  그리고 노드별 시작 시각은 스냅샷 어디에도 없다 (PregelTask 필드 · metadata 키에 시간 없음).
+  Use for: M5-7 `demo_m5.py` TODO(human) ② (get_state 반환 계약) · TODO ① 후보 (C)의 비용.
+
 
 ## Wisdom (Communities)
 

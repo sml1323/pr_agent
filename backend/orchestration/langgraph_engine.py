@@ -436,9 +436,31 @@ class LangGraphEngine(WorkflowEngine):
     # ⚠️ 아직 안 담은 것: 실패 이유·시작 시각·소요 시간. M3 `record_event` 의 몫이고,
     #    여기 넣으면 "지금 상태"와 "무슨 일이 있었나"가 한 dict 에 섞인다.
     # ─────────────────────────────────────────────────────────
+    # ── 확정된 결정 (2026-08-21, M5-7) — 키 6개는 **여기서** 보장한다 ──
+    #
+    # CURRENT.md 의 "열린 결정"이었다: 체크포인트가 0개면 `snapshot.values` 가 빈 dict 라
+    # 약속한 6개 키 중 2개만 나갔다 (실측: scratch/recon_get_state_after_kill.py —
+    # 키가 빠지는 regime 은 **이 경우 딱 하나**다. mid-superstep kill 은 4채널이 다 차 있다).
+    #
+    # 호출부 방어(.get) 대신 여기서 기본값을 까는 이유: 호출부가 는다 —
+    # demo_m5 → 워커 복구 → M9 대시보드. 방어를 호출부마다 반복하면
+    # 하나가 .get 을 빼먹는 순간 거기서 다시 터진다. 같은 방어는 한 곳에서.
+    #
+    # ⚠️ "빈 findings" 가 두 뜻(지적 없음 / 스냅샷 없음)이 되는 문제는 `status` 가 가른다 —
+    #    기본값이 나가는 건 status="not_started" 일 때뿐이다 (Lesson 06).
+    # ⚠️ review_key 는 스냅샷이 아니라 **인자**에서 돌려준다 — 없던 리뷰를 물어봐도
+    #    호출자가 준 열쇠 그대로가 맞다. diff 만 빈 문자열로 남는다.
+    # ─────────────────────────────────────────────────────────
     def get_state(self, review_key: str) -> dict[str, Any]:
         snapshot = self._graph.get_state(self._config(review_key))
+        defaults: dict[str, Any] = {
+            "review_key": review_key,
+            "diff": "",
+            "findings": [],
+            "failed_agents": [],
+        }
         return {
+            **defaults,
             **snapshot.values,
             "next_nodes": list(snapshot.next),
             "status": (
