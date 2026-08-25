@@ -211,8 +211,15 @@ def scenario_kill9() -> bool:
 
     # 재개가 "이어서"였다는 증거: 전체(0.8초+)가 아니라 남은 노드만큼만 걸렸다.
     # 이미 끝난 노드를 다시 안 불렀다 = INV-2 가 오케스트레이션 층에서 지켜졌다.
-    return alive and rc == -int(signal.SIGKILL) and after["status"] == "done" \
-        and len(after["findings"]) == 4
+    #
+    # `before["status"] == "running"` 항은 독립 검증(2026-08-25)이 뚫은 구멍을 막는다:
+    # 판정이 도착점(done·4개)만 보면 **출발점이 이미 도착점이었던 경우**를 못 가른다 —
+    # 자식이 다 끝난 뒤에 kill 이 떨어지면 resume 이 0.00초에 아무것도 안 하고도 ✅ 였다
+    # (부모의 sleep(0.5) 는 바쁜 머신에서 길어질 수만 있어서 정확히 이 방향으로 흔들린다).
+    # 판정식은 성공 "상태"가 아니라 그 성공에 이르는 **경로**를 검사해야 한다.
+    return alive and rc == -int(signal.SIGKILL) \
+        and before["status"] == "running" \
+        and after["status"] == "done" and len(after["findings"]) == 4
 
 
 # ─────────────────────────────────────────────────────────────

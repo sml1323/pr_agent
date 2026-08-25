@@ -91,6 +91,13 @@ class WorkflowEngine(ABC):
         Args:
             review_key: repo · pr_number · head_sha 로 계산된 열쇠. 호출자가 만든다.
             diff: 검토할 diff 원문. ⚠️ 신뢰 경계 밖의 문자열이다 (Lesson 02).
+
+        ⚠️ **멱등이 아니다** (독립 검증 2026-08-25, 실측 4→8): 이미 `done` 인
+        review_key 에 다시 부르면 리듀서가 기존 findings 위에 **이어붙인다** —
+        같은 PR 에 리뷰가 두 번 붙는 모양으로 INV-2 가 깨진다. 크래시 후
+        `running` 상태 재실행은 안전하다(남은 노드만 돈다). 입구 가드를
+        엔진에 둘지 워커에 둘지는 **G11** — M6 워커 배선 직전에 정한다.
+        그때까지 호출자는 `get_state()` 로 `done` 여부를 먼저 봐야 한다.
         """
         ...
 
@@ -103,6 +110,10 @@ class WorkflowEngine(ABC):
 
         `run()` 과 같은 `review_key` 를 받는 것이 이 메서드가 성립하는 조건이다.
         열쇠를 계산으로 얻기 때문에, 죽은 워커가 뭘 반환했는지 몰라도 재개할 수 있다.
+
+        ⚠️ 체크포인트가 없는 열쇠에 부르면 **예외가 난다** (실측: LangGraph 구현은
+        `EmptyInputError`). "일단 resume 해보고 없으면 run" 패턴은 여기서 터진다 —
+        복구 코드는 `get_state()` 의 `status` 로 먼저 갈라야 한다.
         """
         ...
 
