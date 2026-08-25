@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sim 10 — timeout 을 어디에 꽂나</title>
+<style>
+  :root{--bg:#0d1117;--panel:#161b22;--line:#30363d;--ink:#e6edf3;--dim:#8b949e;
+        --ok:#3fb950;--bad:#f85149;--warn:#d29922;--acc:#58a6ff;--pur:#bc8cff;--org:#f0883e}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.6 ui-sans-serif,-apple-system,"Pretendard","Apple SD Gothic Neo",sans-serif}
+  .wrap{max-width:1240px;margin:0 auto;padding:20px 16px 70px}
+  .eyebrow{color:var(--dim);font-size:12px;letter-spacing:.08em;text-transform:uppercase}
+  h1{font-size:23px;margin:4px 0 2px}
+  .sub{color:var(--dim);margin:0 0 16px}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+
+  /* 스테이지 바 */
+  .stages{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+  .st{flex:1;min-width:120px;background:var(--panel);border:1px solid var(--line);
+      border-radius:8px;padding:7px 10px;font-size:12px;color:var(--dim)}
+  .st.cur{border-color:var(--acc);color:var(--ink)}
+  .st.pass{border-color:#238636;background:#0d2818;color:#7ee787}
+  .st.fail{border-color:#8b2426;background:#2d1214;color:#ff9492}
+  .st b{display:block;font-size:11px;opacity:.7}
+
+  .goal{background:#1c2333;border:1px solid #2d3f5f;border-left:3px solid var(--acc);
+        border-radius:8px;padding:11px 14px;margin-bottom:12px;font-size:13px}
+  .goal b{color:var(--acc)}
+  .goal .lat{color:var(--dim);font-size:12px;display:block;margin-top:4px}
+
+  .cols{display:grid;grid-template-columns:1.25fr 1fr;gap:14px;align-items:start}
+  @media(max-width:980px){.cols{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .panel h3{margin:0 0 10px;font-size:12px;color:var(--dim);font-weight:600;
+            letter-spacing:.05em;text-transform:uppercase}
+
+  /* 코드 */
+  pre.code{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;
+       line-height:2.05;white-space:pre;overflow-x:auto;color:#c9d1d9}
+  .kw{color:#ff7b72}.fn{color:#d2a8ff}.str{color:#a5d6ff}.cm{color:#6e7681}.num{color:#79c0ff}
+  .tog{background:#21262d;border:1px dashed var(--pur);border-radius:5px;padding:1px 6px;
+       cursor:pointer;color:#d2a8ff;transition:.12s}
+  .tog:hover{background:#2d1f4a}
+  .slot{display:inline-block;min-width:96px;text-align:center;border-radius:5px;
+        border:1px dashed #484f58;background:#0d1117;color:#484f58;padding:1px 8px;
+        font-size:12px;transition:.12s}
+  .slot.hot{border-color:var(--org);background:#2b1a08;color:var(--org)}
+  .slot.has{border:1px solid var(--org);background:#3d2408;color:#ffa657;cursor:grab}
+  .tokbox{margin:0 0 12px;padding:10px;border:1px solid var(--line);border-radius:8px;
+          background:#0d1117;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .token{font-family:ui-monospace,Menlo,monospace;font-size:13px;padding:4px 10px;
+         border:1px solid var(--org);border-radius:6px;background:#3d2408;color:#ffa657;
+         cursor:grab;user-select:none}
+  .token.gone{opacity:.25;cursor:default}
+  .token:active{cursor:grabbing}
+
+  input[type=range]{flex:1;min-width:120px;accent-color:var(--org)}
+  .tv{font-family:ui-monospace,Menlo,monospace;color:var(--org);font-weight:700}
+
+  canvas{width:100%;height:auto;display:block;border-radius:8px;background:#0b0f14;margin-bottom:10px}
+
+  .preds{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:10px}
+  .preds button{padding:8px 0;background:#0d1117;border:1px solid var(--line);border-radius:7px;
+                color:var(--ink);cursor:pointer;font:inherit;font-weight:700}
+  .preds button.sel{border-color:var(--pur);background:#2d1f4a;color:var(--pur)}
+
+  .acts{display:grid;grid-template-columns:2fr 1fr;gap:8px}
+  button.run{padding:11px;background:var(--ok);color:#04140a;border:0;border-radius:8px;
+             font:inherit;font-weight:800;cursor:pointer}
+  button.run:disabled{opacity:.35;cursor:not-allowed}
+  button.gh{padding:11px;background:#21262d;color:var(--dim);border:1px solid var(--line);
+            border-radius:8px;font:inherit;cursor:pointer}
+
+  .term{background:#010409;border:1px solid var(--line);border-radius:8px;padding:11px 13px;
+        font-family:ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.75;
+        white-space:pre-wrap;min-height:120px;color:#8b949e}
+  .term .g{color:#7ee787}.term .r{color:#ff9492}.term .y{color:#e3b341}
+  .term .b{color:#79c0ff}.term .p{color:#d2a8ff}.term .w{color:#e6edf3}
+
+  .why{border-radius:8px;padding:10px 12px;margin-top:10px;font-size:13px;border:1px solid}
+  .why.ok{background:#0d2818;border-color:#238636;color:#7ee787}
+  .why.bad{background:#2d1214;border-color:#8b2426;color:#ff9492}
+  .why b{display:block;margin-bottom:3px}
+  .deploys{color:var(--dim);font-size:12px;margin-top:8px}
+  .deploys i{font-style:normal;color:var(--ok)}
+  .deploys i.used{color:#484f58}
+
+  .over{position:fixed;inset:0;background:rgba(4,7,11,.92);display:none;place-items:center;z-index:9}
+  .over.on{display:grid}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+        padding:24px 28px;max-width:560px}
+  .card h2{margin:0 0 10px;font-size:23px;text-align:center}
+  .card p{color:var(--dim);font-size:13px;margin:0 0 14px}
+  .card button{display:block;margin:0 auto;padding:10px 22px;background:var(--acc);
+               color:#04101f;border:0;border-radius:8px;font:inherit;font-weight:800;cursor:pointer}
+  .rc{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--dim);
+      border-top:1px solid var(--line);padding-top:10px;margin-top:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">Sim 10 · M5-5 · Lesson 10</div>
+  <h1>timeout 을 어디에 꽂나</h1>
+  <p class="sub">코드를 직접 고쳐서 돌린다. <b>같은 <span class="mono">timeout=</span> 이라도 꽂는 자리가 다르면 살아남는 게 달라진다.</b></p>
+
+  <div class="stages" id="stages"></div>
+  <div class="goal" id="goal"></div>
+
+  <div class="cols">
+    <div class="panel">
+      <h3>backend/orchestration/langgraph_engine.py</h3>
+      <div class="tokbox">
+        <span class="token" id="token" draggable="true">timeout=<span id="tokv">2.5</span></span>
+        <span style="color:var(--dim);font-size:12px">← 끌어서 <span class="mono">░░░</span> 자리에 놓기</span>
+        <input type="range" id="tr" min="0.5" max="8" step="0.1" value="2.5">
+        <span class="tv" id="trv">2.5s</span>
+      </div>
+      <pre class="code" id="code"></pre>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h3>실행</h3>
+        <canvas id="cv" width="1000" height="300"></canvas>
+        <div style="font-size:12px;color:var(--dim);margin-bottom:6px">
+          실행 전 예측 — <b style="color:var(--pur)">state["findings"] 가 몇 개?</b></div>
+        <div class="preds" id="preds"></div>
+        <div class="acts">
+          <button class="run" id="run">▶ 배포하고 돌린다</button>
+          <button class="gh" id="reset">↺ 코드 초기화</button>
+        </div>
+        <div class="deploys" id="dep"></div>
+        <div id="why"></div>
+      </div>
+      <div class="panel" style="margin-top:12px">
+        <h3>worker stdout</h3>
+        <div class="term" id="term">$ uv run python -m backend.worker
+<span class="b">대기 중…</span>  코드를 고치고 ▶ 를 눌러라</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="over" id="over"><div class="card">
+  <h2 id="ovT"></h2><p id="ovB"></p><div class="rc" id="ovR"></div>
+  <button id="again" style="margin-top:14px">다시 처음부터</button>
+</div></div>
+
+<script>
+/* ══════════ 데이터 ══════════ */
+const AG = ["security","quality","testing","docs"];
+const INF = Infinity;
+
+const STAGES = [
+  { n:"몸풀기",   lats:[0.6,0.4,0.8,0.3],
+    goal:"넷 다 빠르다. <b>일단 한 번 돌려서 state 가 어떻게 생겼는지 봐라.</b>",
+    pass:r=>r.findings===4 },
+  { n:"느린 하나", lats:[0.6,0.4,5.0,0.3],
+    goal:"testing 이 <b>5.0초</b>다. 나머지 셋의 <b>findings 3개를 살리고</b>, failed_agents 에 <span class='mono'>['testing']</span> 을 남겨라.",
+    pass:r=>r.findings===3 && r.failed.length===1 && r.failed[0]==="testing" },
+  { n:"안 끝나는 것", lats:[0.6,0.4,INF,0.3],
+    goal:"testing 이 <b>영원히 안 끝난다</b>. 에러도 안 난다. 나머지 셋을 구해라.",
+    pass:r=>r.findings===3 },
+  { n:"일부러 깨기", lats:[0.6,0.4,5.0,0.3],
+    goal:"이번엔 <b>실패를 봐야 한다.</b> 동기 <span class='mono'>def</span> 인 채로 <b>② add_node</b> 에 timeout 을 꽂고 돌려라.",
+    pass:r=>r.kind==="compile" },
+  { n:"눈금 맞추기", lats:[0.6,2.2,5.0,0.3],
+    goal:"quality 는 <b>2.2초</b>(느리지만 정상), testing 은 <b>5.0초</b>. <b>testing 만</b> 자르고 findings 3개를 살려라.",
+    pass:r=>r.findings===3 && r.failed.length===1 && r.failed[0]==="testing" },
+];
+
+/* 코드 — 토글 3상태 */
+const HEADS = [
+  {id:"sync",  head:'<span class="kw">def</span> ',              call:'',                  note:"동기 — 지금 M5 상태"},
+  {id:"block", head:'<span class="kw">async def</span> ',        call:'',                  note:"async 인데 안이 블로킹"},
+  {id:"await", head:'<span class="kw">async def</span> ',        call:'<span class="kw">await</span> ', note:"중간에 손을 놓아준다"},
+];
+
+let S;   // 상태
+function reset(full){
+  S = { stage: full?0:S.stage, slot:null, head:0, t:2.5, pred:null,
+        deploys:3, busy:false, results: full?[]:S.results };
+  if (full) S.results = [];
+  document.getElementById("over").classList.remove("on");
+  document.getElementById("why").innerHTML="";
+  document.getElementById("term").innerHTML =
+    '$ uv run python -m backend.worker\n<span class="b">대기 중…</span>  코드를 고치고 ▶ 를 눌러라';
+  paint(); draw(null,0);
+}
+function softReset(){ S.slot=null; S.head=0; S.pred=null; document.getElementById("why").innerHTML=""; paint(); draw(null,0); }
+
+/* ══════════ 판정 — 레슨 10 실측 ①②③ ══════════ */
+function run(slot, headId, t, lats){
+  if (slot==="B" && headId==="sync")
+    return {kind:"compile", why:"동기 노드에는 노드 타임아웃을 못 건다",
+      trace:"ValueError: Node timeouts are only supported for async nodes\n  because sync Python execution cannot be safely cancelled in-process."};
+
+  const anyHang = lats.some(l=>!isFinite(l));
+  const bites = (headId==="await");           // 취소가 끼려면 손을 놓아줘야 한다
+
+  if (!slot){
+    if (anyHang) return {kind:"hang", why:"타임아웃이 없으니 배리어가 영영 안 닫힌다"};
+    return {kind:"ok", cut:[], wall:Math.max(...lats)};
+  }
+  if (!bites){
+    if (slot==="A"){
+      if (anyHang) return {kind:"hangA", why:"기다리기는 포기했는데 스레드는 안 멈췄다"};
+      if (lats.some(l=>l>t)) return {kind:"outer", wall:Math.max(...lats),
+        why:"TimeoutError 로 결과를 버렸다. 그런데 워커는 "+Math.max(...lats).toFixed(2)+"초를 다 썼다"};
+      return {kind:"ok", cut:[], wall:Math.max(...lats)};
+    }
+    if (anyHang) return {kind:"hang", why:"timeout 을 꽂았지만 GIL 을 안 놔줘서 발화하지 않았다"};
+    return {kind:"ok", cut:[], wall:Math.max(...lats), noop:lats.some(l=>l>t)};
+  }
+  if (slot==="C"){
+    const cut = AG.filter((_,i)=>lats[i]>t);
+    return {kind:"inner", cut, wall:Math.max(...lats.map(l=>Math.min(l,t)))};
+  }
+  if (lats.some(l=>l>t)) return {kind:"outer", wall:t,
+    why: slot==="B" ? "NodeTimeoutError 가 노드 밖에서 났다 — try 를 통째로 지나쳤다"
+                    : "ainvoke() 바깥에서 잘렸다"};
+  return {kind:"ok", cut:[], wall:Math.max(...lats)};
+}
+
+/* 결과 → state 딕셔너리 */
+function toState(res){
+  if (res.kind==="inner") return {findings:4-res.cut.length, failed:res.cut, kind:res.kind};
+  if (res.kind==="ok")    return {findings:4, failed:[], kind:res.kind};
+  return {findings:0, failed:[], kind:res.kind};
+}
+
+/* ══════════ 코드 렌더 ══════════ */
+function slotHTML(id){
+  const has = S.slot===id;
+  return '<span class="slot '+(has?"has":"")+'" data-slot="'+id+'"'+
+         (has?' draggable="true"':'')+'>'+(has?("timeout="+S.t.toFixed(1)):"░░░░░░")+'</span>';
+}
+function paintCode(){
+  const H = HEADS[S.head];
+  document.getElementById("code").innerHTML =
+`<span class="cm"># ── 그래프를 부르는 자리 ─────────────────</span>
+<span class="kw">async def</span> <span class="fn">run_review</span>(pr):
+    <span class="kw">return await</span> asyncio.<span class="fn">wait_for</span>(
+        graph.<span class="fn">ainvoke</span>(state), ${slotHTML("A")}   <span class="cm"># ① invoke 바깥</span>
+    )
+
+<span class="cm"># ── 노드를 등록하는 자리 ─────────────────</span>
+graph.<span class="fn">add_node</span>(<span class="str">"testing"</span>, _run_specialist, ${slotHTML("B")})  <span class="cm"># ② 노드 밖</span>
+
+<span class="cm"># ── 노드 본체 ────────────────────────────</span>
+<span class="tog" id="tog">${H.head.replace(/<[^>]+>/g,"")}</span> <span class="fn">_run_specialist</span>(name, state):
+    <span class="kw">try</span>:
+        result = ${H.call}<span class="fn">_call_agent</span>(name, ${slotHTML("C")})  <span class="cm"># ③ 노드 안</span>
+    <span class="kw">except</span> openai.OpenAIError <span class="kw">as</span> e:
+        <span class="kw">return</span> {<span class="str">"failed_agents"</span>: [name]}
+    <span class="kw">return</span> {<span class="str">"findings"</span>: result}`;
+}
+
+function paint(){
+  const $=id=>document.getElementById(id);
+  $("stages").innerHTML = STAGES.map((s,i)=>{
+    const r = S.results[i];
+    const c = i===S.stage ? "cur" : r===true ? "pass" : r===false ? "fail" : "";
+    return '<div class="st '+c+'"><b>STAGE '+(i+1)+'</b>'+s.n+
+           (r===true?' ✓':r===false?' ✗':'')+'</div>';
+  }).join("");
+  const st = STAGES[S.stage];
+  $("goal").innerHTML = st.goal +
+    '<span class="lat">이번 PR 의 실제 지연 — ' +
+    AG.map((a,i)=>a+" "+(isFinite(st.lats[i])?st.lats[i].toFixed(1)+"s":"∞")).join(" · ") + '</span>';
+  $("tokv").textContent = S.t.toFixed(1);
+  $("trv").textContent  = S.t.toFixed(1)+"s";
+  $("token").className  = "token"+(S.slot?" gone":"");
+  $("preds").innerHTML  = [0,1,2,3,4].map(n=>
+    '<button data-p="'+n+'" class="'+(S.pred===n?"sel":"")+'">'+n+'</button>').join("");
+  $("run").disabled = S.busy || S.pred===null || S.deploys===0;
+  $("dep").innerHTML = "이 스테이지 남은 배포 &nbsp;" +
+    [0,1,2].map(i=>'<i class="'+(i<S.deploys?"":"used")+'">●</i>').join("") +
+    ' &nbsp;<span style="opacity:.6">('+S.deploys+'/3 — 다 쓰면 이 스테이지는 ✗)</span>' +
+    ' · <span style="color:#8b949e">현재 머리: '+HEADS[S.head].note+'</span>';
+  paintCode();
+}
+
+/* ══════════ 타임라인 ══════════ */
+const cv=document.getElementById("cv"), cx=cv.getContext("2d");
+function draw(res, prog){
+  const W=cv.width,H=cv.height,L=150,R=W-40,T=40,lh=58,SPAN=8.5;
+  const x=s=>L+(Math.min(s,SPAN)/SPAN)*(R-L);
+  cx.fillStyle="#0b0f14"; cx.fillRect(0,0,W,H);
+  cx.font="15px ui-monospace,Menlo,monospace"; cx.textBaseline="middle";
+  for(let s=0;s<=8;s++){
+    cx.strokeStyle="#1b2027";cx.beginPath();cx.moveTo(x(s),T-12);cx.lineTo(x(s),T+lh*4-8);cx.stroke();
+    cx.fillStyle="#4d545c";cx.textAlign="center";cx.fillText(s+"s",x(s),T-26);
+  }
+  const lats = STAGES[S.stage].lats;
+  const bites = (HEADS[S.head].id==="await") && S.slot==="C";
+  if (S.slot){
+    cx.strokeStyle="#f0883e";cx.setLineDash([6,5]);cx.lineWidth=2;
+    cx.beginPath();cx.moveTo(x(S.t),T-12);cx.lineTo(x(S.t),T+lh*4-8);cx.stroke();
+    cx.setLineDash([]);cx.lineWidth=1;
+    cx.fillStyle="#f0883e";cx.textAlign="left";
+    cx.fillText("timeout "+S.t.toFixed(1)+"s (슬롯 "+S.slot+")", x(S.t)+6, T-26);
+  }
+  let barrier=0;
+  AG.forEach((n,i)=>{
+    const y=T+i*lh, lat=lats[i], shown=isFinite(lat)?lat:SPAN+1.5;
+    const cut = bites && lat>S.t;
+    const end = cut?Math.min(S.t,shown):shown;
+    const cur = prog===null?0:Math.min(end,prog*SPAN);
+    barrier=Math.max(barrier,cur);
+    cx.fillStyle="#8b949e";cx.font="17px ui-sans-serif,sans-serif";cx.textAlign="right";
+    cx.fillText(n,L-14,y+15);
+    cx.fillStyle="#161b22";cx.fillRect(L,y,R-L,30);
+    if(prog===null) return;
+    const done = prog*SPAN>=end;
+    let col="#2f81f7";
+    if(done) col = cut ? (isFinite(lat)?"#d29922":"#3fb950")
+                 : !isFinite(lat) ? "#f85149"
+                 : (lat>S.t && S.slot) ? "#8957e5" : "#238636";
+    cx.fillStyle=col;cx.fillRect(L,y,x(cur)-L,30);
+    if(done){
+      cx.font="16px ui-monospace,Menlo,monospace";cx.textAlign="left";
+      let lab,lc;
+      if(cut&&isFinite(lat)){lab="✂ "+lat.toFixed(1)+"s 였는데 잘림";lc="#e3b341"}
+      else if(cut){lab="✂ 안 끝나는 걸 잘랐다";lc="#7ee787"}
+      else if(!isFinite(lat)){lab="∞ 안 끝남";lc="#ff9492"}
+      else if(lat>S.t&&S.slot){lab=lat.toFixed(1)+"s · timeout 안 먹음";lc="#d2a8ff"}
+      else{lab=lat.toFixed(1)+"s ✓";lc="#7ee787"}
+      cx.fillStyle=lc;cx.fillText(lab,x(cur)+9,y+15);
+    }
+  });
+  if(prog!==null){
+    cx.strokeStyle="#f0883e";cx.lineWidth=3;cx.beginPath();
+    cx.moveTo(x(barrier),T-8);cx.lineTo(x(barrier),T+lh*4-12);cx.stroke();cx.lineWidth=1;
+    cx.fillStyle="#f0883e";cx.font="15px ui-sans-serif,sans-serif";cx.textAlign="left";
+    cx.fillText("▲ 배리어 — aggregate 는 여기서만 선다",152,T+lh*4+8);
+  }
+}
+function animate(){
+  return new Promise(d=>{const dur=1200,t0=performance.now();
+    (function s(now){const p=Math.min(1,(now-t0)/dur);draw(null,p*1.06);
+      if(p<1)requestAnimationFrame(s);else d()})(t0)});
+}
+
+/* ══════════ 실행 ══════════ */
+async function deploy(){
+  if(S.busy||S.pred===null||S.deploys===0) return;
+  S.busy=true; S.deploys--; paint();
+  const st=STAGES[S.stage];
+  const res=run(S.slot, HEADS[S.head].id, S.t, st.lats);
+  const term=document.getElementById("term");
+
+  if(res.kind==="compile"){
+    draw(null,null);
+    term.innerHTML='$ uv run python -m backend.worker\n<span class="r">'+res.trace+'</span>\n\n'+
+      '<span class="y">→ 돌려보기도 전에 컴파일에서 막혔다.</span>';
+  } else {
+    term.innerHTML='$ uv run python -m backend.worker\n<span class="b">graph.ainvoke() …</span>';
+    await animate();
+    const s=toState(res);
+    if(res.kind==="hang"||res.kind==="hangA"){
+      term.innerHTML='$ uv run python -m backend.worker\n<span class="b">graph.ainvoke() …</span>\n'+
+        '<span class="g">  security  done  0.6s</span>\n<span class="g">  quality   done  0.4s</span>\n'+
+        '<span class="g">  docs      done  0.3s</span>\n<span class="y">  testing   running…</span>\n'+
+        '<span class="y">  testing   running…</span>\n<span class="y">  testing   running…</span>\n\n'+
+        '<span class="r">^C  (에러 없음 · failed_agents 비어 있음 · aggregate 안 섬)</span>';
+    } else if(res.kind==="outer"){
+      term.innerHTML='$ uv run python -m backend.worker\n<span class="b">graph.ainvoke() …</span>\n'+
+        '<span class="r">Traceback (most recent call last):\n  ...\n'+
+        (S.slot==="B"?"langgraph.errors.NodeTimeoutError: Node 'testing' exceeded its run timeout of "
+                      +S.t.toFixed(3)+"s":"asyncio.TimeoutError")+'</span>\n\n'+
+        '<span class="y">→ 예외가 노드 밖에서 났다. state 가 아예 안 나온다.</span>\n'+
+        '<span class="p">>>> state["findings"]        AttributeError</span>';
+    } else {
+      term.innerHTML='$ uv run python -m backend.worker\n<span class="b">graph.ainvoke() …  '+
+        res.wall.toFixed(2)+'s</span>\n\n'+
+        '<span class="p">>>> state["findings"]</span>       <span class="w">'+s.findings+'개</span>\n'+
+        '<span class="p">>>> state["failed_agents"]</span>  <span class="w">'+
+        (s.failed.length?JSON.stringify(s.failed).replace(/"/g,"'"):"[]")+'</span>'+
+        (res.noop?'\n\n<span class="y">→ timeout 을 꽂았는데 아무 일도 안 일어났다.</span>':'');
+    }
+  }
+
+  const st8=toState(res);
+  const pass=st.pass({findings:st8.findings, failed:st8.failed, kind:res.kind});
+  const hit = S.pred===st8.findings;
+  const $why=document.getElementById("why");
+  $why.innerHTML='<div class="why '+(pass?"ok":"bad")+'"><b>'+
+    (pass?"✓ 스테이지 통과":"✗ 목표 미달")+'</b>'+
+    (res.why?'<div class="mono" style="font-size:11px;opacity:.85;margin-bottom:4px">'+res.why+'</div>':'')+
+    '예측 '+S.pred+' · 실제 '+st8.findings+' — '+(hit?"적중":"빗나감")+'</div>';
+
+  S.busy=false;
+  if(pass){ S.results[S.stage]=true; setTimeout(next,900); }
+  else if(S.deploys===0){ S.results[S.stage]=false; setTimeout(next,1400); }
+  else { S.pred=null; paint(); }
+}
+function next(){
+  if(S.stage>=STAGES.length-1) return finish();
+  S.stage++; S.slot=null; S.head=0; S.pred=null; S.deploys=3;
+  document.getElementById("why").innerHTML="";
+  document.getElementById("term").innerHTML=
+    '$ uv run python -m backend.worker\n<span class="b">대기 중…</span>  코드를 고치고 ▶ 를 눌러라';
+  paint(); draw(null,null);
+}
+function finish(){
+  const n=S.results.filter(Boolean).length;
+  document.getElementById("ovT").textContent = n===5?"🏆 5/5 — 전부 통과":"결과 "+n+"/5";
+  document.getElementById("ovB").innerHTML =
+    "같은 <b>timeout=</b> 인데 꽂는 자리가 <b>①②③</b> 중 어디냐에 따라 결과가 갈렸다.<br><br>"+
+    "<b>③ 노드 안</b>에 꽂고 <b>async def + await</b> 로 둘 때만, 느린 하나가 잘려도 "+
+    "나머지 셋의 findings 가 <b>state 로 살아 나온다.</b> 예외가 <b>try 안</b>에서 나기 때문이다.<br><br>"+
+    "①② 는 예외를 <b>try 밖</b>으로 내보내서, 이미 끝난 셋의 결과까지 같이 버린다.";
+  document.getElementById("ovR").innerHTML = STAGES.map((s,i)=>
+    (S.results[i]?"✓":"✗")+"  STAGE "+(i+1)+"  "+s.n).join("<br>");
+  document.getElementById("over").classList.add("on");
+}
+
+/* ══════════ 이벤트 ══════════ */
+const tok=document.getElementById("token");
+tok.addEventListener("dragstart",e=>{ if(S.slot) return e.preventDefault();
+  e.dataTransfer.setData("text","tok") });
+
+const codeEl=document.getElementById("code");
+codeEl.addEventListener("dragstart",e=>{
+  const s=e.target.closest("[data-slot]");
+  if(s && S.slot===s.dataset.slot) e.dataTransfer.setData("text","tok");
+});
+codeEl.addEventListener("dragover",e=>{
+  const s=e.target.closest("[data-slot]"); if(!s) return;
+  e.preventDefault(); s.classList.add("hot");
+});
+codeEl.addEventListener("dragleave",e=>{
+  const s=e.target.closest("[data-slot]"); if(s) s.classList.remove("hot");
+});
+codeEl.addEventListener("drop",e=>{
+  const s=e.target.closest("[data-slot]"); if(!s) return;
+  e.preventDefault(); S.slot=s.dataset.slot; paint(); draw(null,null);
+});
+codeEl.addEventListener("click",e=>{
+  if(e.target.id==="tog"){ S.head=(S.head+1)%3; paint(); draw(null,null); return; }
+  const s=e.target.closest("[data-slot]");
+  if(s){                                    // 클릭으로도 꽂고 뺄 수 있게
+    S.slot = (S.slot===s.dataset.slot) ? null : s.dataset.slot;
+    paint(); draw(null,null);
+  }
+});
+document.getElementById("tr").oninput=e=>{ S.t=+e.target.value; paint(); draw(null,null) };
+document.getElementById("preds").onclick=e=>{
+  const b=e.target.closest("[data-p]"); if(!b||S.busy)return; S.pred=+b.dataset.p; paint() };
+document.getElementById("run").onclick=deploy;
+document.getElementById("reset").onclick=softReset;
+document.getElementById("again").onclick=()=>reset(true);
+
+S={stage:0,results:[]}; reset(true);
+</script>
+</body>
+</html>

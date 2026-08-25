@@ -1,0 +1,679 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sim 11 — 재개 계약 실험실</title>
+<style>
+:root{
+  --bg:#fffef9; --fg:#1a1a18; --muted:#6b6b63; --rule:#ddd9cc;
+  --accent:#8a2b1f; --accent-soft:#f5ece9; --code-bg:#f4f2ea;
+  --ok:#2d6a4a; --ok-soft:#e8f2ec; --warn:#8a5a00; --warn-soft:#faf1dd;
+  --dead:#9b988e; --live:#1f6f8a; --live-soft:#e4f0f4;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#16161a; --fg:#e8e6df; --muted:#9b988e; --rule:#33333a;
+    --accent:#e8836f; --accent-soft:#2a1f1d; --code-bg:#1e1e24;
+    --ok:#7bc39a; --ok-soft:#1c2a23; --warn:#d9a441; --warn-soft:#2a2317;
+    --dead:#55555e; --live:#6fb6cf; --live-soft:#17262c;
+  }
+}
+*{box-sizing:border-box}
+html{font-size:16px}
+body{background:var(--bg);color:var(--fg);margin:0 auto;max-width:68rem;
+  padding:2.5rem 1.25rem 6rem;line-height:1.6;
+  font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Apple SD Gothic Neo","Noto Serif KR",serif}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+.eyebrow{font-family:ui-monospace,Menlo,monospace;font-size:.7rem;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--muted);margin:0 0 .5rem}
+h1{font-size:2rem;line-height:1.15;margin:0 0 .6rem;letter-spacing:-.02em}
+.subtitle{color:var(--muted);margin:0 0 1.6rem;font-size:1.02rem}
+p{margin:0 0 .9rem}
+code{font-family:ui-monospace,Menlo,monospace;font-size:.85em;background:var(--code-bg);
+  padding:.1em .35em;border-radius:3px}
+a{color:var(--accent)}
+.panel{border:1px solid var(--rule);border-radius:8px;padding:1rem 1.1rem;margin:0 0 1.2rem;
+  background:color-mix(in srgb,var(--code-bg) 40%,transparent)}
+.panel h3{margin:0 0 .7rem;font-size:.75rem;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);font-family:ui-monospace,Menlo,monospace;font-weight:600}
+.grid2{display:grid;grid-template-columns:1.05fr 1fr;gap:1.2rem}
+@media(max-width:920px){.grid2{grid-template-columns:1fr}}
+
+.hud{display:flex;flex-wrap:wrap;gap:1.1rem;align-items:center;border:1px solid var(--rule);
+  border-radius:8px;padding:.7rem .9rem;margin:0 0 1.2rem;background:var(--bg);
+  font-family:ui-monospace,Menlo,monospace;font-size:.78rem}
+.hud .m{display:flex;flex-direction:column;gap:.15rem}
+.hud .m span{color:var(--muted);font-size:.66rem;letter-spacing:.08em;text-transform:uppercase}
+.hud b{font-size:1rem}
+.report{display:flex;gap:.28rem}
+.report i{width:1.5rem;height:1.5rem;border:1px solid var(--rule);border-radius:4px;
+  display:flex;align-items:center;justify-content:center;font-style:normal;font-size:.8rem}
+.report i.ok{border-color:var(--ok);background:var(--ok-soft);color:var(--ok)}
+.report i.no{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.report i.skip{border-style:dashed;color:var(--muted)}
+.report i.now{border-color:var(--live);background:var(--live-soft)}
+
+.card{border:1px solid var(--live);border-left-width:3px;border-radius:6px;padding:.7rem .9rem;
+  background:var(--live-soft);margin:0 0 1.2rem}
+.card .t{font-weight:600;margin:0 0 .2rem}
+.card .n{font-size:.86rem;color:var(--muted);margin:0}
+.card .goal{font-family:ui-monospace,Menlo,monospace;font-size:.8rem;margin:.5rem 0 0;
+  padding-top:.5rem;border-top:1px dashed var(--rule)}
+
+/* 코드 = 조작 대상 */
+pre.code{font-family:ui-monospace,Menlo,monospace;font-size:.82rem;line-height:1.85;
+  background:var(--code-bg);border:1px solid var(--rule);border-radius:6px;
+  padding:.8rem .9rem;margin:0;overflow-x:auto;white-space:pre}
+.slot{border:1px dashed var(--live);border-radius:4px;padding:.05rem .35rem;cursor:pointer;
+  background:var(--live-soft);color:var(--fg)}
+.slot:hover{border-style:solid;border-color:var(--accent)}
+.slot.locked{border-color:var(--rule);background:transparent;color:var(--muted);
+  cursor:default;border-style:dotted}
+.cm{color:var(--muted);font-style:italic}
+.hint{font-size:.74rem;color:var(--muted);margin:.4rem 0 0;font-family:inherit}
+
+input[type=range]{width:100%}
+button.run{background:var(--live);color:#fff;border:none;border-radius:6px;padding:.5rem 1.3rem;
+  font:inherit;font-size:.92rem;cursor:pointer;font-weight:600}
+button.run:disabled{opacity:.4;cursor:default}
+button.ghost{background:var(--bg);border:1px solid var(--rule);border-radius:6px;padding:.5rem .9rem;
+  font:inherit;font-size:.82rem;cursor:pointer;color:var(--muted);margin-left:.4rem}
+button.ghost:hover{border-color:var(--accent)}
+button.ghost:disabled{opacity:.4;cursor:default}
+
+.pred{border:1px solid var(--live);border-radius:8px;padding:.9rem 1rem;margin:0 0 1.2rem;background:var(--live-soft)}
+.pred .q{font-weight:600;margin:0 0 .6rem;font-size:.95rem}
+.pred ol{list-style:none;margin:0;padding:0}
+.pred li{border:1px solid var(--rule);border-radius:5px;padding:.45rem .7rem;margin-bottom:.35rem;
+  cursor:pointer;background:var(--bg);font-size:.84rem;font-family:ui-monospace,Menlo,monospace}
+.pred li:hover{border-color:var(--accent)}
+.pred li.correct{border-color:var(--ok);background:var(--ok-soft)}
+.pred li.wrong{border-color:var(--accent);background:var(--accent-soft)}
+.pred li.locked{cursor:default}
+
+canvas{width:100%;height:auto;display:block;border-radius:6px}
+.term{font-family:ui-monospace,Menlo,monospace;font-size:.78rem;line-height:1.75;
+  background:var(--code-bg);border:1px solid var(--rule);border-radius:6px;
+  padding:.7rem .8rem;white-space:pre-wrap;min-height:6rem}
+.term .dim{color:var(--muted)}
+.term .g{color:var(--ok)} .term .r{color:var(--accent)} .term .w{color:var(--warn)}
+.verdict{border-radius:6px;padding:.7rem .9rem;margin:.6rem 0;font-size:.9rem}
+.verdict.ok{background:var(--ok-soft);border-left:3px solid var(--ok)}
+.verdict.bad{background:var(--accent-soft);border-left:3px solid var(--accent)}
+.verdict.warn{background:var(--warn-soft);border-left:3px solid var(--warn)}
+.verdict b{display:block;margin-bottom:.2rem}
+.note{font-size:.85rem;color:var(--muted)}
+.done{border:2px solid var(--ok);border-radius:8px;padding:1.2rem;margin:0 0 1.2rem;background:var(--ok-soft)}
+.done h2{margin:0 0 .4rem;font-size:1.25rem}
+</style>
+</head>
+<body>
+
+<p class="eyebrow">Sim 11 · Lesson 11 · M5-6</p>
+<h1>재개 계약 실험실</h1>
+<p class="subtitle">워커를 <strong>죽였다 다시 띄운다.</strong> 이미 끝난 에이전트를 또 부르면 LLM 호출이 두 번 나간다.</p>
+
+<div class="hud">
+  <div class="m"><span>스테이지</span><b id="hStage">1 / 5</b></div>
+  <div class="m"><span>남은 시도</span><b id="hTries">2</b></div>
+  <div class="m"><span>성적표</span><div class="report" id="hReport"></div></div>
+  <div class="m"><span>아낀 LLM 호출</span><b id="hSaved">0회</b></div>
+</div>
+
+<div id="over"></div>
+
+<div class="card">
+  <p class="t" id="cardT">—</p>
+  <p class="n" id="cardN">—</p>
+  <p class="goal" id="cardG">—</p>
+</div>
+
+<div class="pred" id="pred" style="display:none">
+  <p class="q" id="predQ">—</p>
+  <ol id="predopts"></ol>
+</div>
+
+<div class="grid2">
+  <div>
+    <div class="panel">
+      <h3>backend/orchestration/langgraph_engine.py — 클릭하면 바뀐다</h3>
+      <pre class="code" id="codeA"></pre>
+      <p class="hint" id="hintA"></p>
+    </div>
+
+    <div class="panel">
+      <h3>워커를 언제 죽이나 — <span class="mono" id="killLbl">kill -9 @ 0.50s</span></h3>
+      <input type="range" id="killSlider" min="0.1" max="1.3" step="0.05" value="0.5">
+      <p class="note" style="margin:.4rem 0 0">
+        지연: security 0.6 · quality 0.4 · testing 0.8 · docs 0.3 ·
+        <span id="doneNow">이 시점까지 끝난 노드: quality, docs</span>
+      </p>
+      <p style="margin:.9rem 0 0">
+        <button class="run" id="runbtn">▶ 돌리고 죽이고 재개한다</button>
+        <button class="ghost" id="skipbtn">이 스테이지 넘기기</button>
+      </p>
+    </div>
+  </div>
+
+  <div>
+    <div class="panel">
+      <h3>타임라인 — 프로세스 A ┃ 프로세스 B</h3>
+      <canvas id="cv" width="1060" height="360"></canvas>
+    </div>
+    <div class="panel">
+      <h3>터미널</h3>
+      <div class="term" id="term">—</div>
+      <div id="verdict"></div>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <h3>해설</h3>
+  <div id="explain"><p class="note">한 판 돌리면 여기에 근거가 뜬다.</p></div>
+</div>
+
+<p class="note" style="margin-top:1.5rem">
+돌아가기 → <a href="../lessons/0011-checkpoint-is-a-resume-contract.html">Lesson 11</a> ·
+<a href="../lessons/0007-permission-to-write-together.html">Lesson 07</a> ·
+<a href="../lessons/0006-nobody-looked.html">Lesson 06</a> ·
+그다음 <code>NOTEBOOK.md</code> 에 내 말로 3줄
+</p>
+
+<script>
+/* ─────────────────────────────────────────────────────────────
+   엔진 — 실측(2026-08-21) + 설치된 패키지의 1차 출처를 규칙으로 옮겼다.
+     · InMemorySaver 로 프로세스 A `run()` → done · findings 4
+       프로세스 B 에서 같은 thread_id `get_state()` → not_started · findings 0
+     · "Only use InMemorySaver for debugging or testing purposes." (독스트링)
+     · "These per-task writes ensure successful nodes' outputs are durable and
+        don't need re-running on resume." (Checkpointers 문서)
+     · "Without this, any Python callable stored in checkpoint data will be
+        imported and executed on load." (serde/_msgpack.py 모듈 독스트링)
+   숫자는 전부 아래 sim() 이 계산한다. 하드코딩한 결과값은 없다.
+   ───────────────────────────────────────────────────────────── */
+const AG = ["security", "quality", "testing", "docs"];
+const DELAYS = { security: 0.6, quality: 0.4, testing: 0.8, docs: 0.3 };
+const SPAN = 1.4;
+
+/* 조작 축 셋 — 전부 진짜 코드 한 줄에 대응한다 */
+const AXES = {
+  ck: {
+    label: "checkpointer=",
+    opts: [
+      { v: "none",     t: "None",              d: "저장이 없다. 이어갈 상태 자체가 없다" },
+      { v: "memory",   t: "InMemorySaver()",   d: "프로세스 메모리(dict). 이미 설치돼 있다" },
+      { v: "sqlite",   t: "SqliteSaver(...)",  d: "파일 하나. langgraph-checkpoint-sqlite 필요" },
+      { v: "postgres", t: "PostgresSaver(...)",d: "004 의 그 DB. langgraph-checkpoint-postgres 필요" },
+    ],
+  },
+  verdict: {
+    label: "status 판정",
+    opts: [
+      { v: "status3", t: '"status": not_started/running/done', d: "M5-3 의 결정. 세 값" },
+      { v: "isdone",  t: '"is_done": not snapshot.next',       d: "불리언 하나. 처음에 이걸 썼었다" },
+    ],
+  },
+  serde: {
+    label: "채널에 담는 것",
+    opts: [
+      { v: "pydantic", t: "Finding(agent_type=..., ...)", d: "Pydantic 객체를 그대로" },
+      { v: "dict",     t: "Finding(...).model_dump()",    d: "dict 로 눕혀서" },
+    ],
+  },
+};
+
+function sim(cfg) {
+  const done = AG.filter(a => DELAYS[a] <= cfg.killAt);        // kill 순간까지 "끝나 있던" 노드
+  const events = [];
+
+  if (cfg.ck === "none") {
+    return { err: "resume(): 체크포인터가 None 이라 이어갈 상태가 없다",
+             done, restored: [], recalls: AG.slice(), total: 8, dup: 4,
+             findings: 4, lost: false, status: "—", schemaBroke: false, events };
+  }
+
+  const survives = cfg.ck !== "memory";                        // 프로세스 경계를 넘나
+  let restored = survives ? done.slice() : [];
+  let schemaBroke = false;
+
+  // 스키마를 바꾼 뒤 Pydantic 객체를 되읽으면 역직렬화가 깨진다
+  if (survives && cfg.schemaChange && cfg.serde === "pydantic" && restored.length) {
+    restored = []; schemaBroke = true;
+  }
+
+  // 재시작한 워커가 get_state() 로 무엇을 보나
+  const hasCheckpoint = survives && !schemaBroke && restored.length > 0;
+  const status = hasCheckpoint ? "running" : "not_started";
+  const isDone = !hasCheckpoint;                               // next 가 비어 있으면 true
+
+  // is_done 불리언이면 "이미 끝났다"로 읽고 스킵한다 → 리뷰 유실
+  const lost = (cfg.verdict === "isdone") && isDone;
+
+  const recalls = lost ? [] : AG.filter(a => !restored.includes(a));
+  const total = 4 + recalls.length;
+  return { done, restored, recalls, total, dup: recalls.length,
+           findings: lost ? 0 : 4, lost, status, schemaBroke, err: null, events };
+}
+
+/* ── 스테이지 ───────────────────────────────────────────────
+   통과 조건이 둘로 갈린다:
+     kind:"predict" — 예측을 맞히면 통과 (관찰이 목표)
+     kind:"build"   — 목표 수치를 달성하면 통과 (구성이 목표)
+   ───────────────────────────────────────────────────────── */
+const STAGES = [
+  {
+    t: "죽여본다",
+    n: "설정은 고정이다. 인메모리 체크포인터로 돌리다가 0.5초에 <b>kill -9</b>. 다시 띄워 <code>resume()</code> 을 부른다.",
+    goal: "예측: 재개하면 LLM 을 <b>몇 번 다시</b> 부를까?",
+    kind: "predict", ask: "recalls",
+    fixed: { ck: "memory", verdict: "status3", serde: "pydantic" },
+    lockKill: 0.5,
+  },
+  {
+    t: "살아남게 만들어라",
+    n: "같은 0.5초 kill. 이번엔 <b>체크포인터를 네가 고른다.</b>",
+    goal: "목표: 중복 호출을 <b>2회 이하</b>로",
+    kind: "build", check: r => !r.err && r.dup <= 2,
+    fixed: { verdict: "status3", serde: "pydantic" }, free: ["ck"],
+    lockKill: 0.5,
+  },
+  {
+    t: "0회를 노려라",
+    n: "체크포인터도, <b>죽는 시점도</b> 네가 고른다. 재개가 넷을 전부 건너뛰게 만들어야 한다.",
+    goal: "목표: 중복 호출 <b>0회</b> · findings 4개",
+    kind: "build", check: r => !r.err && r.dup === 0 && r.findings === 4,
+    fixed: { verdict: "status3", serde: "pydantic" }, free: ["ck", "kill"],
+  },
+  {
+    t: "리뷰가 사라졌다",
+    n: "누군가 <code>get_state()</code> 의 판정을 <b><code>is_done</code> 불리언</b>으로 되돌려놨다. 이대로 돌리면 리뷰가 통째로 유실된다.",
+    goal: "목표: <b>findings 4개</b>를 지켜라 (유실 0)",
+    kind: "build", check: r => !r.err && !r.lost && r.findings === 4,
+    fixed: { serde: "pydantic" }, free: ["ck", "verdict"],
+    preset: { ck: "memory", verdict: "isdone" },
+    lockKill: 0.5,
+  },
+  {
+    t: "스키마가 바뀌었다",
+    n: "재개 <b>직전에</b> 누가 <code>Finding</code> 에 필드를 하나 추가했다. 저장된 체크포인트를 되읽어야 한다.",
+    goal: "목표: 스키마가 바뀌어도 중복 호출 <b>2회 이하</b>",
+    kind: "build", check: r => !r.err && r.dup <= 2 && !r.lost,
+    fixed: { verdict: "status3" }, free: ["ck", "serde"],
+    preset: { ck: "sqlite", serde: "pydantic" },
+    lockKill: 0.5, schemaChange: true,
+  },
+];
+
+/* ── 게임 상태 ───────────────────────────────────────────── */
+const G = { stage: 0, tries: 2, report: [], saved: 0, over: false, phase: "setup" };
+let cfg = { ck: "memory", verdict: "status3", serde: "pydantic", killAt: 0.5, schemaChange: false };
+let last = null, anim = null, predictedOk = null;
+
+const $ = id => document.getElementById(id);
+const st = () => STAGES[G.stage];
+
+function applyStage() {
+  const s = st();
+  Object.assign(cfg, s.fixed || {});
+  Object.assign(cfg, s.preset || {});
+  cfg.schemaChange = !!s.schemaChange;
+  if (s.lockKill !== undefined) cfg.killAt = s.lockKill;
+  $("killSlider").value = cfg.killAt;
+  $("killSlider").disabled = !isFree("kill");
+  G.tries = 2;
+  G.phase = "setup"; predictedOk = null; last = null;
+  $("pred").style.display = "none";
+  $("term").innerHTML = "—"; $("verdict").innerHTML = "";
+  $("explain").innerHTML = `<p class="note">설정을 맞추고 <b>돌리기 전에</b> 무슨 일이 날지 그려볼 것.</p>`;
+  $("runbtn").disabled = false; $("skipbtn").disabled = false;
+  cancelAnimationFrame(anim);
+  drawAll(); drawTimeline(null, 0);
+}
+const isFree = axis => (st().free || []).includes(axis);
+
+/* ── 코드 패널 = 조작 대상 ─────────────────────────────── */
+function slot(axis) {
+  const a = AXES[axis], cur = a.opts.find(o => o.v === cfg[axis]);
+  const free = isFree(axis);
+  return `<span class="slot ${free ? "" : "locked"}" data-axis="${axis}">${cur.t}</span>`;
+}
+function drawAll() {
+  const s = st();
+  $("hStage").textContent = (G.stage + 1) + " / " + STAGES.length;
+  $("hTries").textContent = G.tries;
+  $("hSaved").textContent = G.saved + "회";
+  $("hReport").innerHTML = STAGES.map((_, i) => {
+    const r = G.report[i];
+    const c = i === G.stage && r === undefined ? "now" : r === true ? "ok" : r === false ? "no" : r === "skip" ? "skip" : "";
+    return `<i class="${c}">${r === true ? "✓" : r === false ? "✗" : r === "skip" ? "–" : i + 1}</i>`;
+  }).join("");
+  $("cardT").innerHTML = "스테이지 " + (G.stage + 1) + " — " + s.t;
+  $("cardN").innerHTML = s.n;
+  $("cardG").innerHTML = s.goal;
+
+  $("codeA").innerHTML =
+`engine = LangGraphEngine(
+    ${slot("ck")}
+)
+
+<span class="cm"># 노드가 채널에 담는 것</span>
+return {"findings": [${slot("serde")}]}
+
+<span class="cm"># 재시작한 워커가 읽는 판정</span>
+return {**snapshot.values, ${slot("verdict")}}` +
+(cfg.schemaChange ? `\n\n<span class="cm"># ⚠️ 재개 직전에 누가 이걸 했다</span>\nclass Finding(BaseModel):\n    ...\n    <span class="cm">+ severity_reason: str</span>` : "");
+
+  const freeAxes = (s.free || []).filter(x => x !== "kill");
+  $("hintA").innerHTML = freeAxes.length
+    ? "점선 칸을 클릭하면 바뀐다 — " + freeAxes.map(x => "<code>" + AXES[x].label + "</code>").join(" · ") +
+      "<br>" + freeAxes.map(x => AXES[x].opts.map(o => `<b>${o.t}</b> ${o.d}`).join(" / ")).join("<br>")
+    : "이 스테이지는 설정이 고정이다. 결과를 <b>예측</b>하는 게 과제다.";
+
+  $("killLbl").textContent = "kill -9 @ " + cfg.killAt.toFixed(2) + "s";
+  const d = AG.filter(a => DELAYS[a] <= cfg.killAt);
+  $("doneNow").innerHTML = "이 시점까지 끝난 노드: <b>" + (d.length ? d.join(", ") : "없음") + "</b>";
+
+  $("codeA").querySelectorAll(".slot").forEach(el => el.addEventListener("click", () => {
+    const axis = el.dataset.axis;
+    if (!isFree(axis) || G.phase === "running" || G.over) return;
+    const o = AXES[axis].opts, i = o.findIndex(x => x.v === cfg[axis]);
+    cfg[axis] = o[(i + 1) % o.length].v;
+    drawAll();
+  }));
+}
+
+/* ── 타임라인 ───────────────────────────────────────────── */
+const cv = $("cv"), ctx = cv.getContext("2d");
+const PAD_L = 92, PAD_T = 30, ROW = 40, GAP = 26;
+const HALF = (cv.width - PAD_L - 20 - GAP) / 2;
+const xA = t => PAD_L + Math.min(t, SPAN) / SPAN * HALF;
+const xB = t => PAD_L + HALF + GAP + Math.min(t, SPAN) / SPAN * HALF;
+const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+
+function drawTimeline(r, now) {
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  const fg = css("--fg"), muted = css("--muted"), rule = css("--rule"),
+        ok = css("--ok"), acc = css("--accent"), live = css("--live"), dead = css("--dead");
+  ctx.font = "12px ui-monospace, Menlo, monospace"; ctx.textBaseline = "middle";
+
+  ctx.textAlign = "left"; ctx.fillStyle = muted;
+  ctx.fillText("프로세스 A", PAD_L, 12);
+  ctx.fillText("프로세스 B  (resume)", PAD_L + HALF + GAP, 12);
+
+  ctx.strokeStyle = rule; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(PAD_L + HALF + GAP / 2, 6); ctx.lineTo(PAD_L + HALF + GAP / 2, PAD_T + ROW * 7); ctx.stroke();
+
+  if (!r) {
+    ctx.fillStyle = muted; ctx.textAlign = "left";
+    ctx.fillText("설정을 맞추고 돌린다.", PAD_L, PAD_T + ROW * 3);
+    return;
+  }
+
+  // 에이전트 4줄
+  AG.forEach((a, i) => {
+    const y = PAD_T + i * ROW + 12;
+    ctx.textAlign = "right"; ctx.fillStyle = fg; ctx.fillText(a, PAD_L - 10, y);
+
+    // A: kill 까지 그린다
+    const endA = Math.min(DELAYS[a], cfg.killAt);
+    const shownA = Math.min(now, endA);
+    const finishedA = r.done.includes(a);
+    ctx.fillStyle = finishedA ? ok : muted; ctx.globalAlpha = finishedA ? .85 : .35;
+    ctx.fillRect(PAD_L, y - 8, Math.max(0, xA(shownA) - PAD_L), 16);
+    ctx.globalAlpha = 1;
+    if (!finishedA && now >= cfg.killAt) {
+      ctx.textAlign = "left"; ctx.fillStyle = muted; ctx.font = "10px ui-monospace, Menlo, monospace";
+      ctx.fillText("중간에 죽음", xA(cfg.killAt) + 4, y);
+      ctx.font = "12px ui-monospace, Menlo, monospace";
+    }
+
+    // B: 재개
+    if (now > cfg.killAt) {
+      const nb = now - cfg.killAt;
+      if (r.restored.includes(a)) {
+        ctx.save(); ctx.setLineDash([4, 3]); ctx.strokeStyle = ok; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(xB(0), y); ctx.lineTo(xB(0.25), y); ctx.stroke(); ctx.restore();
+        ctx.textAlign = "left"; ctx.fillStyle = ok; ctx.font = "10px ui-monospace, Menlo, monospace";
+        ctx.fillText("건너뜀 (pending_writes)", xB(0.28), y);
+        ctx.font = "12px ui-monospace, Menlo, monospace";
+      } else if (r.recalls.includes(a)) {
+        ctx.fillStyle = acc; ctx.globalAlpha = .85;
+        ctx.fillRect(xB(0), y - 8, Math.max(0, xB(Math.min(nb, DELAYS[a])) - xB(0)), 16);
+        ctx.globalAlpha = 1;
+        if (nb >= DELAYS[a]) {
+          ctx.textAlign = "left"; ctx.fillStyle = acc; ctx.font = "10px ui-monospace, Menlo, monospace";
+          ctx.fillText("다시 호출 💸", xB(DELAYS[a]) + 4, y);
+          ctx.font = "12px ui-monospace, Menlo, monospace";
+        }
+      } else if (r.lost) {
+        ctx.textAlign = "left"; ctx.fillStyle = acc; ctx.font = "10px ui-monospace, Menlo, monospace";
+        ctx.fillText("스킵 — 아무도 안 봤다", xB(0), y);
+        ctx.font = "12px ui-monospace, Menlo, monospace";
+      }
+    }
+  });
+
+  // kill 선
+  ctx.save(); ctx.setLineDash([3, 3]); ctx.strokeStyle = acc; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(xA(cfg.killAt), PAD_T - 6); ctx.lineTo(xA(cfg.killAt), PAD_T + ROW * 4 + 4); ctx.stroke();
+  ctx.restore();
+  ctx.textAlign = "left"; ctx.fillStyle = acc; ctx.font = "10px ui-monospace, Menlo, monospace";
+  ctx.fillText("kill -9", xA(cfg.killAt) + 3, PAD_T - 12);
+  ctx.font = "12px ui-monospace, Menlo, monospace";
+
+  // 저장소 두 줄 — 이게 이 시뮬의 핵심 대비다
+  const yW = PAD_T + 4 * ROW + 26, yC = yW + 30;
+  ctx.strokeStyle = rule; ctx.beginPath();
+  ctx.moveTo(PAD_L - 80, yW - 16); ctx.lineTo(cv.width - 20, yW - 16); ctx.stroke();
+
+  ctx.textAlign = "right"; ctx.fillStyle = fg;
+  ctx.fillText("pending_writes", PAD_L - 10, yW);
+  ctx.fillText("checkpoint", PAD_L - 10, yC);
+
+  // pending_writes: 노드가 끝날 때마다 즉시
+  AG.forEach(a => {
+    if (now >= DELAYS[a] && DELAYS[a] <= cfg.killAt) {
+      ctx.fillStyle = live;
+      ctx.fillRect(xA(DELAYS[a]) - 3, yW - 7, 6, 14);
+      ctx.textAlign = "center"; ctx.fillStyle = muted; ctx.font = "9px ui-monospace, Menlo, monospace";
+      ctx.fillText(a.slice(0, 4), xA(DELAYS[a]), yW - 14);
+      ctx.font = "12px ui-monospace, Menlo, monospace";
+    }
+  });
+  // checkpoint: 층이 통째로 닫혀야 — 넷이 다 끝나야 한다
+  const allEnd = Math.max.apply(null, AG.map(a => DELAYS[a]));
+  if (now >= allEnd && cfg.killAt >= allEnd) {
+    ctx.fillStyle = live; ctx.fillRect(xA(allEnd) - 3, yC - 7, 6, 14);
+  } else if (now >= cfg.killAt) {
+    ctx.textAlign = "left"; ctx.fillStyle = muted; ctx.font = "10px ui-monospace, Menlo, monospace";
+    ctx.fillText("아직 안 찍혔다 — 층이 안 닫혔으니까", PAD_L + 4, yC);
+    ctx.font = "12px ui-monospace, Menlo, monospace";
+  }
+
+  // B 쪽 저장소 상태
+  if (now > cfg.killAt) {
+    ctx.textAlign = "left"; ctx.font = "10px ui-monospace, Menlo, monospace";
+    if (r.err) { ctx.fillStyle = acc; ctx.fillText("저장소 없음", xB(0), yW); }
+    else if (cfg.ck === "memory") { ctx.fillStyle = acc; ctx.fillText("프로세스와 함께 사라졌다", xB(0), yW); }
+    else if (r.schemaBroke) { ctx.fillStyle = acc; ctx.fillText("있는데 못 읽는다 (역직렬화 실패)", xB(0), yW); }
+    else { ctx.fillStyle = ok; ctx.fillText("살아남음 → " + r.restored.length + "개 복원", xB(0), yW); }
+    ctx.font = "12px ui-monospace, Menlo, monospace";
+  }
+}
+
+/* ── 예측 ───────────────────────────────────────────────── */
+function askPrediction(r) {
+  const right = String(r.recalls.length) + "번 다시 부른다";
+  const opts = [...new Set([right, "0번 다시 부른다", "2번 다시 부른다", "4번 다시 부른다"])]
+    .slice(0, 3).sort(() => Math.random() - .5);
+  if (!opts.includes(right)) { opts[0] = right; }
+  $("pred").style.display = "block";
+  $("predQ").textContent = "재개하면 LLM 을 몇 번 다시 부를까?";
+  $("predopts").innerHTML = opts.map(o => `<li data-v="${o}">${o}</li>`).join("");
+  $("predopts").querySelectorAll("li").forEach(li => li.addEventListener("click", () => {
+    if (li.classList.contains("locked")) return;
+    predictedOk = li.dataset.v === right;
+    $("predopts").querySelectorAll("li").forEach(x => {
+      x.classList.add("locked");
+      if (x.dataset.v === right) x.classList.add("correct");
+      else if (x === li) x.classList.add("wrong");
+    });
+    play(r);
+  }));
+}
+
+/* ── 실행 ───────────────────────────────────────────────── */
+function play(r) {
+  G.phase = "running";
+  $("runbtn").disabled = true; $("skipbtn").disabled = true;
+  const slowest = r.recalls.length ? Math.max.apply(null, r.recalls.map(a => DELAYS[a])) : 0.3;
+  const cap = cfg.killAt + slowest + 0.3;
+  const t0 = performance.now();
+  cancelAnimationFrame(anim);
+  (function step() {
+    const now = (performance.now() - t0) / 1000;
+    drawTimeline(r, now);
+    if (now < cap) anim = requestAnimationFrame(step);
+    else { drawTimeline(r, cap); finish(r); }
+  })();
+}
+
+function finish(r) {
+  G.phase = "done";
+  const s = st();
+  const pass = s.kind === "predict" ? predictedOk : s.check(r);
+
+  const lines = [];
+  lines.push('<span class="dim">$ python worker.py</span>');
+  AG.filter(a => r.done.includes(a)).sort((a, b) => DELAYS[a] - DELAYS[b]).forEach(a =>
+    lines.push(`  [${DELAYS[a].toFixed(2)}s] ${a.padEnd(9)}→ <span class="g">done</span>  <span class="dim">put_writes()</span>`));
+  lines.push(`  <span class="r">kill -9 @ ${cfg.killAt.toFixed(2)}s</span>`);
+  lines.push('<span class="dim">$ python worker.py --resume</span>');
+  if (r.err) {
+    lines.push(`  <span class="r">${r.err}</span>`);
+  } else {
+    lines.push(`  get_state() → ${cfg.verdict === "isdone" ? "is_done=" + (r.status === "not_started") : '"status": ' + r.status}`);
+    if (r.schemaBroke) lines.push(`  <span class="r">역직렬화 실패 — 저장된 Finding 을 새 스키마로 못 읽는다</span>`);
+    if (r.lost) lines.push(`  <span class="r">이미 끝난 걸로 판정 → 스킵. 아무도 이 PR 을 안 봤다</span>`);
+    else {
+      lines.push(`  건너뜀: ${r.restored.length ? r.restored.join(", ") : "없음"}`);
+      lines.push(`  다시 호출: ${r.recalls.length ? r.recalls.join(", ") : "없음"}`);
+    }
+  }
+  lines.push("");
+  lines.push(`&gt;&gt;&gt; LLM 호출 <b>${r.total}회</b> (중복 <b>${r.dup}회</b> · 아낀 것 ${4 - r.dup}회)`);
+  lines.push(`&gt;&gt;&gt; state["findings"] <b>${r.findings}개</b>`);
+  $("term").innerHTML = lines.join("\n");
+
+  $("verdict").innerHTML = verdictHtml(r, pass);
+  $("explain").innerHTML = explainHtml(r, pass);
+
+  if (pass) {
+    G.report[G.stage] = true;
+    G.saved += (4 - r.dup);
+    drawAll();
+    nextButton("다음 스테이지 →");
+  } else {
+    G.tries--;
+    drawAll();
+    if (G.tries > 0) {
+      $("runbtn").disabled = false; $("skipbtn").disabled = false;
+      G.phase = "setup"; predictedOk = null; $("pred").style.display = "none";
+    } else {
+      G.report[G.stage] = false; drawAll();
+      nextButton("시도 소진 — 다음 스테이지 →");
+    }
+  }
+}
+
+function nextButton(label) {
+  if (G.stage >= STAGES.length - 1) return endGame();
+  const b = document.createElement("button");
+  b.className = "run"; b.textContent = label; b.style.marginTop = ".8rem";
+  b.addEventListener("click", () => { G.stage++; applyStage(); });
+  $("verdict").appendChild(b);
+}
+
+function verdictHtml(r, pass) {
+  if (r.err) return `<div class="verdict bad"><b>체크포인터가 없다</b>
+    <code>resume()</code> 은 <code>invoke(None, ...)</code> 인데, "이어서" 할 상태가 어디에도 없다.
+    <b>재개는 기능이 아니라 저장소의 부수효과</b>다.</div>`;
+  if (r.lost) return `<div class="verdict bad"><b>리뷰가 통째로 유실됐다 — 최악</b>
+    재시작한 워커가 <code>snapshot.next</code> 가 빈 걸 보고 "이미 끝났다"로 읽었다.
+    <b>시작 전과 완료 후가 둘 다 <code>next=()</code></b> 라서 불리언 하나로는 못 가른다.
+    구분자는 <code>created_at</code> 이고, 그걸 M5-3 에서 <code>status</code> 세 값으로 갈라뒀다.</div>`;
+  if (r.schemaBroke) return `<div class="verdict warn"><b>체크포인트는 살아남았는데 못 읽는다</b>
+    <code>Finding</code> 에 필드가 하나 늘자 저장된 객체를 되살릴 수 없다.
+    <b>Pydantic 객체를 그대로 넣으면 저장 포맷이 우리 클래스에 묶인다.</b>
+    <code>dict</code> 로 눕혔으면 키가 하나 비었을 뿐이다 — 004 <code>findings</code> 표에서 이미 고른 쪽.</div>`;
+  if (r.dup === 0) return `<div class="verdict ok"><b>중복 0회 — 계약이 성립했다</b>
+    끝난 넷이 전부 <code>pending_writes</code> 에 있었고, <code>resume()</code> 이 하나도 다시 안 불렀다.
+    LLM 호출 ${r.total}회로 끝났다.</div>`;
+  if (r.dup === 4) return `<div class="verdict bad"><b>넷을 전부 다시 불렀다</b>
+    ${cfg.ck === "memory" ? "<code>InMemorySaver</code> 는 프로세스 메모리다. 프로세스가 죽으면 같이 죽는다 — <b>원리적으로 <code>kill -9</code> 를 못 넘는다.</b>"
+      : "복원된 게 없다."} INV-2 가 오케스트레이션 층에서 깨졌다.</div>`;
+  return `<div class="verdict ${pass ? "ok" : "warn"}"><b>${r.restored.length}개 건너뛰고 ${r.dup}개 다시 불렀다</b>
+    kill 순간까지 <b>끝나 있던</b> 것만 살아남는다 — ${r.done.join(", ") || "없음"}.
+    돌고 있던 건 저장될 기회가 없었다.</div>`;
+}
+
+function explainHtml(r, pass) {
+  const b = [];
+  if (st().kind === "predict") b.push(`<p><b>${predictedOk ? "예측 적중" : "예측이 빗나갔다"}</b></p>`);
+  b.push(`<p><b>두 층이 다르다.</b> 타임라인 아래 두 줄을 보라 —
+    <code>pending_writes</code> 는 노드가 끝날 때마다 <b>즉시</b> 찍히고,
+    <code>checkpoint</code> 는 <b>층이 통째로 닫혀야</b> 갱신된다.
+    ${cfg.killAt >= 0.8 ? "" : "지금은 <code>checkpoint</code> 가 한 번도 안 찍혔다 — 그런데도 " + r.restored.length + "개가 복원됐다. "}
+    <b>재개가 건너뛸 수 있는 근거는 <code>checkpoint</code> 가 아니라 <code>pending_writes</code></b>다.
+    1차 출처: <i>"These per-task writes ensure successful nodes' outputs are durable and
+    don't need re-running on resume."</i></p>`);
+  b.push(`<p><b>그래서 "정확히 한 번"이 아니라 "덜 부른다"다.</b> 지금 ${cfg.killAt.toFixed(2)}초에 죽여서
+    ${r.done.length}개가 끝나 있었고 ${r.recalls.length}개를 다시 불렀다.
+    <b>몇 개가 살아남는지는 스케줄링 타이밍이 정한다</b> — 코드가 정하지 않는다.
+    진짜 "정확히 한 번"은 M6 에서 호출 자체를 멱등하게 만들어야 나온다.</p>`);
+  if (cfg.serde === "pydantic") b.push(`<p><b>그리고 경고 하나가 계속 뜨고 있다</b> —
+    <code>Deserializing unregistered type ... Finding</code>. 정리 잔소리가 아니라 <b>보안 경계</b>다:
+    <i>"any Python callable stored in checkpoint data will be <b>imported and executed</b> on load."</i>
+    체크포인트를 읽는다는 건 거기 적힌 타입을 import 한다는 뜻이다.</p>`);
+  return b.join("");
+}
+
+function endGame() {
+  G.over = true;
+  const ok = G.report.filter(x => x === true).length;
+  $("over").innerHTML = `<div class="done" style="${ok === STAGES.length ? "" : "border-color:var(--rule);background:transparent"}">
+    <h2>${ok} / ${STAGES.length} 통과 · 아낀 LLM 호출 ${G.saved}회</h2>
+    <p>${ok === STAGES.length ? "다섯 스테이지를 다 넘겼다. 이제 M5-6 의 결정 셋이 무엇을 사는지 손에 있다."
+      : "✗ 가 남은 스테이지를 다시 열어보면 왜 막혔는지가 보인다."}</p>
+    <button class="run" onclick="location.reload()">다시</button></div>`;
+  $("runbtn").disabled = true; $("skipbtn").disabled = true;
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+/* ── 배선 ───────────────────────────────────────────────── */
+$("killSlider").addEventListener("input", e => {
+  if (!isFree("kill") || G.phase === "running") { e.target.value = cfg.killAt; return; }
+  cfg.killAt = parseFloat(e.target.value);
+  drawAll(); drawTimeline(null, 0);
+});
+$("runbtn").addEventListener("click", () => {
+  if (G.over || G.phase === "running") return;
+  last = sim(cfg);
+  if (st().kind === "predict") { askPrediction(last); $("runbtn").disabled = true; }
+  else play(last);
+});
+$("skipbtn").addEventListener("click", () => {
+  if (G.over || G.phase === "running") return;
+  G.report[G.stage] = "skip"; drawAll();
+  $("verdict").innerHTML = `<div class="verdict"><b>넘겼다</b>
+    안전하지만 아무것도 안 배운다. 성적표에 <code>–</code> 로 남는다.</div>`;
+  $("runbtn").disabled = true; $("skipbtn").disabled = true;
+  nextButton("다음 스테이지 →");
+});
+
+applyStage();
+</script>
+</body>
+</html>
