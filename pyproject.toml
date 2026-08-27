@@ -20,6 +20,11 @@ dependencies = [
 dev = [
     "debugpy>=1.8.21",
     "httpx>=0.28.1",
+    "ipykernel>=7.3.0",
+    "jupyterlab>=4.6.3",
+    "matplotlib>=3.11.1",
+    "nbclient>=0.11.0",
+    "numpy>=2.5.2",
     "pytest>=9.1.1",
     "ruff>=0.14",
 ]

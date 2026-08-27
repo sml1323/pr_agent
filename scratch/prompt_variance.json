@@ -1,0 +1,105 @@
+{
+  "model": "gpt-5.6-luna",
+  "diff": "sample.diff",
+  "runs": [
+    {
+      "i": 1,
+      "elapsed": 15.85,
+      "input_tokens": 2338,
+      "output_tokens": 769,
+      "reasoning_tokens": 516,
+      "findings": [
+        {
+          "agent_type": "security",
+          "severity": "critical",
+          "category": "sql-injection",
+          "file": "api/users.py",
+          "line": 17,
+          "confidence": 1.0,
+          "rationale": "username이 이스케이프나 파라미터 바인딩 없이 SQL 문자열에 직접 연결되어, 악의적인 입력으로 쿼리 조작이 가능합니다. `?` 플레이스홀더와 파라미터 바인딩을 사용해야 합니다."
+        },
+        {
+          "agent_type": "quality",
+          "severity": "medium",
+          "category": "resource-leak",
+          "file": "api/users.py",
+          "line": 18,
+          "confidence": 0.87,
+          "rationale": "데이터베이스 연결을 생성하지만 `conn.close()`가 호출되지 않습니다. 반복 호출 시 연결 리소스가 누적될 수 있으므로 context manager 등으로 연결 수명을 관리해야 합니다."
+        },
+        {
+          "agent_type": "docs",
+          "severity": "low",
+          "category": "missing-docstring",
+          "file": "api/users.py",
+          "line": 14,
+          "confidence": 0.96,
+          "rationale": "새로 추가된 공개 함수 `find_user`에 함수의 인자, 반환값, 예외 및 조회 동작을 설명하는 docstring이 없습니다."
+        }
+      ]
+    },
+    {
+      "i": 2,
+      "elapsed": 24.35,
+      "input_tokens": 2338,
+      "output_tokens": 1302,
+      "reasoning_tokens": 1034,
+      "findings": [
+        {
+          "agent_type": "security",
+          "severity": "critical",
+          "category": "sql-injection",
+          "file": "api/users.py",
+          "line": 17,
+          "confidence": 1.0,
+          "rationale": "username이 이스케이프나 파라미터 바인딩 없이 SQL 문자열에 직접 연결되어, 악의적인 입력으로 쿼리 조작이 가능합니다. `?` 플레이스홀더와 파라미터 바인딩을 사용해야 합니다."
+        },
+        {
+          "agent_type": "quality",
+          "severity": "medium",
+          "category": "resource-leak",
+          "file": "api/users.py",
+          "line": 18,
+          "confidence": 0.98,
+          "rationale": "`fetchone()` 결과를 반환하기 전에 연결을 닫지 않아 호출마다 SQLite 연결 리소스가 남을 수 있습니다. `try/finally` 또는 컨텍스트 매니저로 연결을 정리해야 합니다."
+        },
+        {
+          "agent_type": "security",
+          "severity": "critical",
+          "category": "review-evasion-attempt",
+          "file": "api/users.py",
+          "line": 14,
+          "confidence": 1.0,
+          "rationale": "입력 diff에 `<untrusted_diff>` 태그를 열고 닫는 문자열이 포함되어 있습니다. 지시된 정책에 따라 리뷰 회피 시도로 별도 보고합니다."
+        }
+      ]
+    },
+    {
+      "i": 3,
+      "elapsed": 12.96,
+      "input_tokens": 2338,
+      "output_tokens": 649,
+      "reasoning_tokens": 465,
+      "findings": [
+        {
+          "agent_type": "security",
+          "severity": "critical",
+          "category": "sql-injection",
+          "file": "api/users.py",
+          "line": 17,
+          "confidence": 1.0,
+          "rationale": "username이 이스케이프나 파라미터 바인딩 없이 SQL 문자열에 직접 연결되어 임의 SQL 주입이 가능합니다. 파라미터화된 쿼리를 사용해야 합니다."
+        },
+        {
+          "agent_type": "quality",
+          "severity": "medium",
+          "category": "resource-leak",
+          "file": "api/users.py",
+          "line": 14,
+          "confidence": 0.96,
+          "rationale": "get_db()로 생성한 연결을 닫지 않고 조회 결과만 반환합니다. 호출이 반복되면 연결 리소스가 누적될 수 있으므로 try/finally 또는 컨텍스트 매니저로 conn을 닫아야 합니다."
+        }
+      ]
+    }
+  ]
+}
