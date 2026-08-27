@@ -202,16 +202,35 @@ def _usage_dict(usage: object) -> dict[str, Any]:
 # ──────────────────────────────────────────────────────────────────────
 PROMPT_SOURCE = "backend/agents/base.py:SYSTEM_PROMPT"  # M6-4 에서 backend/prompts/ 로 바뀐다
 
+# 프롬프트 변형의 짧은 이름. 파일명에 들어가므로 조건이 다르면 파일도 갈린다.
+#
+# ⚠️ 2026-08-27: 이 슬롯은 원래 안 열려던 것이다 — `review_diff()` 가 SYSTEM_PROMPT 를
+#    하드코딩해서 지금은 `orig` 밖에 만들 수 없고, "없는 축을 미리 적으면 이걸 실험했다는
+#    오해가 생긴다"고 판단했다. **그런데 15판 이사가 이걸 강제했다.**
+#    `scratch/prompt_2x2.json` 의 `no_tag_rule` 셀은 SYSTEM_PROMPT 에서 한 줄을 뺀
+#    진짜 다른 프롬프트이고, 슬롯이 없으면 `sample__luna__k3.json` 하나에 충돌한다.
+#    → 축이 실제로 존재하는 데이터가 생긴 순간 슬롯을 연다. 저스트-인-타임의 정상 동작이다.
+VARIANT_DEFAULT = "orig"
 
-def run_identity(fixture: str, k: int) -> tuple[str, dict[str, Any]]:
-    """이 실행의 파일명과 meta 를 만든다. 이름은 조건에서 계산한다 — 저장이 아니라."""
+
+def run_identity(
+    fixture: str, k: int, *, variant: str = VARIANT_DEFAULT,
+    prompt_source: str = PROMPT_SOURCE, measured_at: str | None = None,
+) -> tuple[str, dict[str, Any]]:
+    """이 실행의 파일명과 meta 를 만든다. 이름은 조건에서 계산한다 — 저장이 아니라.
+
+    인자로 열어둔 셋(`variant`·`prompt_source`·`measured_at`)은 **과거 데이터를
+    옮길 때만** 쓴다. 새 실행은 전부 기본값이다 — 지금 만들 수 있는 프롬프트가
+    하나뿐이기 때문이다(M6-4 에서 늘어난다).
+    """
     # 모델명의 접두부(gpt-5.6-)는 파일명에서 뺀다. 구분에 기여하지 않는다.
     short_model = MODEL.rsplit("-", 1)[-1]
-    name = f"{fixture}__{short_model}__k{k}.json"
+    name = f"{fixture}__{short_model}__{variant}__k{k}.json"
     meta = {
         "model": MODEL,
-        "prompt_source": PROMPT_SOURCE,
-        "measured_at": date.today().isoformat(),
+        "variant": variant,
+        "prompt_source": prompt_source,
+        "measured_at": measured_at or date.today().isoformat(),
         "k": k,
     }
     return name, meta
@@ -297,7 +316,15 @@ def do_regrade(path: Path) -> None:
     fixture = data["fixture"]
     expected = load_expected()
 
-    print(f"\n{path.name}  ({data.get('meta', {})})\n")
+    # meta 전체를 찍으면 note 때문에 표를 못 읽는다. 조건만 한 줄로.
+    m = data.get("meta", {})
+    cond = " · ".join(
+        str(m[k]) for k in ("model", "variant", "prompt_source") if k in m
+    )
+    when = ", ".join(m.get("spans", [m["measured_at"]] if "measured_at" in m else []))
+    print(f"\n{path.name}")
+    print(f"  {cond}")
+    print(f"  측정 {when}" + (f"  ⚠️ {m['note'][:60]}…" if "note" in m else "") + "\n")
     graded: list[tuple[str, RunGrade]] = []
     errors = 0
     for r in data["runs"]:

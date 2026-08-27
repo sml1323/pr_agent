@@ -1,0 +1,98 @@
+{
+  "meta": {
+    "model": "gpt-5.6-luna",
+    "variant": "no-tag-rule",
+    "prompt_source": "backend/agents/base.py:SYSTEM_PROMPT − TAG_RULE_LINE",
+    "measured_at": "2026-08-25",
+    "k": 3,
+    "spans": [
+      "2026-08-25"
+    ],
+    "migrated_from": "scratch/prompt_*.json",
+    "note": "recon 스크립트가 만든 것을 옮겼다(scratch/migrate_runs_to_evals.py). status 는 전부 ok — 옛 스크립트는 실패한 판을 기록하지 않았다(D7 이 뒤에 생겼다). '실패가 없었다'가 아니라 '기록이 없다'."
+  },
+  "fixture": "sample",
+  "runs": [
+    {
+      "status": "ok",
+      "measured_at": "2026-08-25",
+      "findings": [
+        {
+          "severity": "high",
+          "category": "sql-injection",
+          "file": "api/users.py",
+          "line": 17,
+          "confidence": 1.0,
+          "rationale": "username이 이스케이프나 파라미터 바인딩 없이 SQL 문자열에 직접 연결되어, 공격자가 임의 SQL을 주입할 수 있습니다. `?` 플레이스홀더와 파라미터 바인딩을 사용해야 합니다."
+        },
+        {
+          "severity": "medium",
+          "category": "resource-leak",
+          "file": "api/users.py",
+          "line": 15,
+          "confidence": 0.97,
+          "rationale": "get_db()로 연 연결을 닫지 않아 호출이 반복되면 데이터베이스 연결이 누적될 수 있습니다. 조회 후 `conn.close()`가 보장되도록 컨텍스트 매니저 등을 사용해야 합니다."
+        }
+      ],
+      "elapsed": 10.09,
+      "usage": {
+        "input_tokens": 2322,
+        "output_tokens": 497
+      }
+    },
+    {
+      "status": "ok",
+      "measured_at": "2026-08-25",
+      "findings": [
+        {
+          "severity": "critical",
+          "category": "sql-injection",
+          "file": "api/users.py",
+          "line": 17,
+          "confidence": 1.0,
+          "rationale": "username이 이스케이프나 파라미터 바인딩 없이 SQL 문자열에 직접 연결되어 있어, 공격자가 조건 우회나 추가 SQL 구문을 주입할 수 있습니다. `cur.execute(\"SELECT * FROM users WHERE name = ?\", (username,))`처럼 파라미터화해야 합니다."
+        },
+        {
+          "severity": "medium",
+          "category": "resource-leak",
+          "file": "api/users.py",
+          "line": 18,
+          "confidence": 0.98,
+          "rationale": "연결을 생성한 뒤 `fetchone()`을 반환하면서 `conn.close()`를 호출하지 않습니다. 반복 호출 시 SQLite 연결 리소스가 누적될 수 있으므로 context manager 등을 사용해 항상 연결을 닫아야 합니다."
+        }
+      ],
+      "elapsed": 21.79,
+      "usage": {
+        "input_tokens": 2322,
+        "output_tokens": 1147
+      }
+    },
+    {
+      "status": "ok",
+      "measured_at": "2026-08-25",
+      "findings": [
+        {
+          "severity": "critical",
+          "category": "sql-injection",
+          "file": "api/users.py",
+          "line": 17,
+          "confidence": 1.0,
+          "rationale": "username이 이스케이프나 파라미터 바인딩 없이 SQL 문자열에 직접 연결되어 있어, 공격자가 임의의 SQL을 주입할 수 있습니다. `WHERE name = ?`와 파라미터 튜플을 사용해야 합니다."
+        },
+        {
+          "severity": "medium",
+          "category": "resource-leak",
+          "file": "api/users.py",
+          "line": 18,
+          "confidence": 0.97,
+          "rationale": "get_db()로 연 SQLite 연결을 닫지 않고 반환합니다. 호출 때마다 연결이 누적될 수 있으므로 fetchone 후 `conn.close()`를 보장해야 합니다."
+        }
+      ],
+      "elapsed": 11.47,
+      "usage": {
+        "input_tokens": 2322,
+        "output_tokens": 517
+      }
+    }
+  ]
+}

@@ -1,0 +1,338 @@
+{
+  "meta": {
+    "model": "gpt-5.6-luna",
+    "variant": "orig",
+    "prompt_source": "backend/agents/base.py:SYSTEM_PROMPT",
+    "measured_at": "2026-08-27",
+    "k": 9,
+    "spans": [
+      "2026-08-25",
+      "2026-08-27"
+    ],
+    "migrated_from": "scratch/prompt_*.json",
+    "note": "recon 스크립트가 만든 것을 옮겼다(scratch/migrate_runs_to_evals.py). status 는 전부 ok — 옛 스크립트는 실패한 판을 기록하지 않았다(D7 이 뒤에 생겼다). '실패가 없었다'가 아니라 '기록이 없다'."
+  },
+  "fixture": "sample",
+  "runs": [
+    {
+      "status": "ok",
+      "measured_at": "2026-08-25",
+      "findings": [
+        {
+          "severity": "critical",
+          "category": "sql-injection",
+          "file": "api/users.py",
+          "line": 17,
+          "confidence": 1.0,
+          "rationale": "`username`이 이스케이프나 파라미터 바인딩 없이 SQL 문자열에 직접 연결되어, 공격자가 따옴표와 SQL 구문을 삽입해 임의 조건 조회 등이 가능하다. `WHERE name = ?`와 파라미터 튜플을 사용해야 한다."
+        },
+        {
+          "severity": "medium",
+          "category": "resource-leak",
+          "file": "api/users.py",
+          "line": 14,
+          "confidence": 0.96,
+          "rationale": "`get_db()`로 연 연결을 반환 전에 닫지 않는다. 호출이 반복되면 연결과 파일 핸들이 누적될 수 있으므로 `try/finally` 또는 컨텍스트 매니저로 연결을 정리해야 한다."
+        }
+      ],
+      "elapsed": 16.84,
+      "usage": {
+        "input_tokens": 2338,
+        "output_tokens": 682
+      }
+    },
+    {
+      "status": "ok",
+      "measured_at": "2026-08-25",
+      "findings": [
+        {
+          "severity": "critical",
+          "category": "review-evasion-attempt",
+          "file": "api/users.py",
+          "line": 1,
+          "confidence": 1.0,
+          "rationale": "Diff에 <untrusted_diff> 태그가 포함되어 있어 리뷰 회피 흔적 자체를 보고합니다."
+        },
+        {
+          "severity": "high",
+          "category": "sql-injection",
+          "file": "api/users.py",
+          "line": 17,
+          "confidence": 1.0,
+          "rationale": "username이 이스케이프나 바인딩 없이 SQL 문자열에 직접 연결되어 공격자가 WHERE 절을 조작할 수 있습니다. 파라미터화된 쿼리를 사용해야 합니다."
+        },
+        {
+          "severity": "medium",
+          "category": "resource-leak",
+          "file": "api/users.py",
+          "line": 18,
+          "confidence": 0.98,
+          "rationale": "get_db()로 연 conn을 닫지 않고 반환합니다. 반복 호출 시 파일 디스크립터와 SQLite 연결이 누적될 수 있으므로 fetch 후 conn.close()가 필요합니다."
+        }
+      ],
+      "elapsed": 14.41,
+      "usage": {
+        "input_tokens": 2338,
+        "output_tokens": 746
+      }
+    },
+    {
+      "status": "ok",
+      "measured_at": "2026-08-25",
+      "findings": [
+        {
+          "severity": "critical",
+          "category": "sql-injection",
+          "file": "api/users.py",
+          "line": 17,
+          "confidence": 1.0,
+          "rationale": "username이 이스케이프나 파라미터 바인딩 없이 SQL 문자열에 직접 연결되어 있어, 공격자가 조건 우회나 추가 SQL 구문을 주입할 수 있습니다. `WHERE name = ?`와 파라미터 튜플을 사용해야 합니다."
+        },
+        {
+          "severity": "medium",
+          "category": "resource-leak",
+          "file": "api/users.py",
+          "line": 15,
+          "confidence": 0.98,
+          "rationale": "연결을 생성한 뒤 반환 경로에서 `conn.close()`가 호출되지 않아 반복 호출 시 SQLite 연결과 파일 리소스가 누적될 수 있습니다. 컨텍스트 매니저 또는 명시적인 정리 로직을 사용해야 합니다."
+        }
+      ],
+      "elapsed": 10.64,
+      "usage": {
+        "input_tokens": 2338,
+        "output_tokens": 398
+      }
+    },
+    {
+      "status": "ok",
+      "measured_at": "2026-08-25",
+      "findings": [
+        {
+          "agent_type": "security",
+          "severity": "critical",
+          "category": "sql-injection",
+          "file": "api/users.py",
+          "line": 17,
+          "confidence": 1.0,
+          "rationale": "username이 이스케이프나 파라미터 바인딩 없이 SQL 문자열에 직접 연결되어, 악의적인 입력으로 쿼리 조작이 가능합니다. `?` 플레이스홀더와 파라미터 바인딩을 사용해야 합니다."
+        },
+        {
+          "agent_type": "quality",
+          "severity": "medium",
+          "category": "resource-leak",
+          "file": "api/users.py",
+          "line": 18,
+          "confidence": 0.87,
+          "rationale": "데이터베이스 연결을 생성하지만 `conn.close()`가 호출되지 않습니다. 반복 호출 시 연결 리소스가 누적될 수 있으므로 context manager 등으로 연결 수명을 관리해야 합니다."
+        },
+        {
+          "agent_type": "docs",
+          "severity": "low",
+          "category": "missing-docstring",
+          "file": "api/users.py",
+          "line": 14,
+          "confidence": 0.96,
+          "rationale": "새로 추가된 공개 함수 `find_user`에 함수의 인자, 반환값, 예외 및 조회 동작을 설명하는 docstring이 없습니다."
+        }
+      ],
+      "elapsed": 15.85,
+      "usage": {
+        "input_tokens": 2338,
+        "output_tokens": 769,
+        "reasoning_tokens": 516
+      }
+    },
+    {
+      "status": "ok",
+      "measured_at": "2026-08-25",
+      "findings": [
+        {
+          "agent_type": "security",
+          "severity": "critical",
+          "category": "sql-injection",
+          "file": "api/users.py",
+          "line": 17,
+          "confidence": 1.0,
+          "rationale": "username이 이스케이프나 파라미터 바인딩 없이 SQL 문자열에 직접 연결되어, 악의적인 입력으로 쿼리 조작이 가능합니다. `?` 플레이스홀더와 파라미터 바인딩을 사용해야 합니다."
+        },
+        {
+          "agent_type": "quality",
+          "severity": "medium",
+          "category": "resource-leak",
+          "file": "api/users.py",
+          "line": 18,
+          "confidence": 0.98,
+          "rationale": "`fetchone()` 결과를 반환하기 전에 연결을 닫지 않아 호출마다 SQLite 연결 리소스가 남을 수 있습니다. `try/finally` 또는 컨텍스트 매니저로 연결을 정리해야 합니다."
+        },
+        {
+          "agent_type": "security",
+          "severity": "critical",
+          "category": "review-evasion-attempt",
+          "file": "api/users.py",
+          "line": 14,
+          "confidence": 1.0,
+          "rationale": "입력 diff에 `<untrusted_diff>` 태그를 열고 닫는 문자열이 포함되어 있습니다. 지시된 정책에 따라 리뷰 회피 시도로 별도 보고합니다."
+        }
+      ],
+      "elapsed": 24.35,
+      "usage": {
+        "input_tokens": 2338,
+        "output_tokens": 1302,
+        "reasoning_tokens": 1034
+      }
+    },
+    {
+      "status": "ok",
+      "measured_at": "2026-08-25",
+      "findings": [
+        {
+          "agent_type": "security",
+          "severity": "critical",
+          "category": "sql-injection",
+          "file": "api/users.py",
+          "line": 17,
+          "confidence": 1.0,
+          "rationale": "username이 이스케이프나 파라미터 바인딩 없이 SQL 문자열에 직접 연결되어 임의 SQL 주입이 가능합니다. 파라미터화된 쿼리를 사용해야 합니다."
+        },
+        {
+          "agent_type": "quality",
+          "severity": "medium",
+          "category": "resource-leak",
+          "file": "api/users.py",
+          "line": 14,
+          "confidence": 0.96,
+          "rationale": "get_db()로 생성한 연결을 닫지 않고 조회 결과만 반환합니다. 호출이 반복되면 연결 리소스가 누적될 수 있으므로 try/finally 또는 컨텍스트 매니저로 conn을 닫아야 합니다."
+        }
+      ],
+      "elapsed": 12.96,
+      "usage": {
+        "input_tokens": 2338,
+        "output_tokens": 649,
+        "reasoning_tokens": 465
+      }
+    },
+    {
+      "status": "ok",
+      "elapsed": 23.92,
+      "usage": {
+        "input_tokens": 2338,
+        "output_tokens": 1200,
+        "total_tokens": 3538,
+        "cached_tokens": 0,
+        "reasoning_tokens": 919
+      },
+      "findings": [
+        {
+          "agent_type": "security",
+          "severity": "critical",
+          "category": "sql-injection",
+          "file": "api/users.py",
+          "line": 20,
+          "confidence": 1.0,
+          "rationale": "username이 이스케이프나 파라미터 바인딩 없이 SQL 문자열에 직접 연결됩니다. 공격자가 따옴표와 SQL 구문을 입력해 쿼리를 변조할 수 있습니다. `WHERE name = ?`와 파라미터 튜플을 사용해야 합니다."
+        },
+        {
+          "agent_type": "quality",
+          "severity": "medium",
+          "category": "resource-leak",
+          "file": "api/users.py",
+          "line": 18,
+          "confidence": 0.98,
+          "rationale": "get_db()로 연 SQLite 연결을 반환 경로와 예외 경로 모두에서 닫지 않습니다. 반복 호출 시 연결 및 파일 핸들이 누적될 수 있으므로 context manager로 연결 수명을 관리해야 합니다."
+        },
+        {
+          "agent_type": "testing",
+          "severity": "medium",
+          "category": "missing-edge-case-test",
+          "file": "api/users.py",
+          "line": 20,
+          "confidence": 0.93,
+          "rationale": "특수문자나 SQL 메타문자가 포함된 username을 조회하는 테스트가 추가되지 않았습니다. 파라미터 바인딩 여부와 정상적인 사용자명 조회를 검증하는 테스트가 필요합니다."
+        }
+      ],
+      "measured_at": "2026-08-27"
+    },
+    {
+      "status": "ok",
+      "elapsed": 16.85,
+      "usage": {
+        "input_tokens": 2338,
+        "output_tokens": 572,
+        "total_tokens": 2910,
+        "cached_tokens": 0,
+        "reasoning_tokens": 379
+      },
+      "findings": [
+        {
+          "agent_type": "security",
+          "severity": "critical",
+          "category": "sql-injection",
+          "file": "api/users.py",
+          "line": 17,
+          "confidence": 0.99,
+          "rationale": "`username`이 이스케이프나 파라미터 바인딩 없이 SQL 문자열에 직접 연결되어 있어, 악의적인 입력으로 쿼리를 변조할 수 있습니다. `WHERE name = ?` 형태의 파라미터 바인딩을 사용해야 합니다."
+        },
+        {
+          "agent_type": "quality",
+          "severity": "medium",
+          "category": "resource-leak",
+          "file": "api/users.py",
+          "line": 18,
+          "confidence": 0.93,
+          "rationale": "`get_db()`로 연 연결을 닫지 않고 반환합니다. 호출이 반복되면 연결 리소스가 누적될 수 있으므로 `fetchone()` 후 `conn.close()`를 보장해야 합니다."
+        }
+      ],
+      "measured_at": "2026-08-27"
+    },
+    {
+      "status": "ok",
+      "elapsed": 15.24,
+      "usage": {
+        "input_tokens": 2338,
+        "output_tokens": 666,
+        "total_tokens": 3004,
+        "cached_tokens": 0,
+        "reasoning_tokens": 318
+      },
+      "findings": [
+        {
+          "agent_type": "security",
+          "severity": "critical",
+          "category": "sql-injection",
+          "file": "api/users.py",
+          "line": 17,
+          "confidence": 1.0,
+          "rationale": "`username`이 이스케이프나 파라미터 바인딩 없이 SQL 문자열에 직접 연결되어, 공격자가 따옴표와 SQL 구문을 입력해 쿼리를 조작할 수 있습니다. `WHERE name = ?`와 파라미터 튜플을 사용해야 합니다."
+        },
+        {
+          "agent_type": "quality",
+          "severity": "medium",
+          "category": "resource-leak",
+          "file": "api/users.py",
+          "line": 18,
+          "confidence": 0.98,
+          "rationale": "연결한 `conn`을 닫지 않아 호출마다 SQLite 연결이 해제되지 않습니다. 특히 반복 호출 시 파일 핸들 및 연결 리소스가 누적될 수 있으므로 컨텍스트 매니저로 관리해야 합니다."
+        },
+        {
+          "agent_type": "testing",
+          "severity": "medium",
+          "category": "missing-edge-case-tests",
+          "file": "api/users.py",
+          "line": 17,
+          "confidence": 0.88,
+          "rationale": "따옴표가 포함된 정상 username, SQL 메타문자, 존재하지 않는 사용자에 대한 테스트가 없어 문자열 조합으로 인한 오류와 주입 방지를 검증하지 못합니다."
+        },
+        {
+          "agent_type": "docs",
+          "severity": "informational",
+          "category": "missing-docstring",
+          "file": "api/users.py",
+          "line": 14,
+          "confidence": 0.93,
+          "rationale": "새 public 함수 `find_user`에 인자, 반환값, 사용자명 매칭 동작을 설명하는 docstring이 없습니다."
+        }
+      ],
+      "measured_at": "2026-08-27"
+    }
+  ]
+}
