@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>레퍼런스 — LLM 평가 통계 다섯 공식</title>
+<link rel="stylesheet" href="../assets/style.css">
+<style>
+  .fx { border:1px solid var(--rule); border-radius:6px; margin:0 0 2.6rem; overflow:hidden; }
+  .fx > h2 { margin:0; padding:0.75rem 1.1rem; background:var(--code-bg);
+             font-size:1.02rem; border-bottom:1px solid var(--rule); }
+  .fx > h2 .n { color:var(--muted); font-family:ui-monospace,Menlo,monospace;
+                font-size:0.8rem; margin-right:0.5rem; }
+  .fx-body { padding:1.1rem 1.2rem 0.4rem; }
+  .fx-body > h3 { font-size:0.7rem; letter-spacing:0.12em; text-transform:uppercase;
+                  color:var(--muted); margin:1.3rem 0 0.5rem; font-weight:600; }
+  .fx-body > h3:first-child { margin-top:0; }
+  .eq { background:var(--code-bg); border-radius:4px; padding:0.85rem 1rem;
+        font-family:ui-monospace,Menlo,monospace; font-size:0.86rem; line-height:1.75;
+        overflow-x:auto; white-space:pre; margin:0 0 1rem; }
+  .iv { border-left:3px solid var(--accent,#b5544a); background:var(--accent-soft,#faf6f5);
+        padding:0.85rem 1.1rem; margin:1rem 0 1.2rem; border-radius:0 4px 4px 0; }
+  .iv b { display:block; font-size:0.68rem; letter-spacing:0.12em; text-transform:uppercase;
+          color:var(--muted); margin-bottom:0.45rem; }
+  .brk { border-left:3px solid #c98a1b; padding:0.7rem 1.1rem; margin:1rem 0;
+         background:color-mix(in srgb, #c98a1b 7%, transparent); border-radius:0 4px 4px 0; }
+  @media print { .fx { break-inside:avoid; } }
+</style>
+</head>
+<body>
+
+<p class="eyebrow">Reference · M6 · backend/eval/stats.py</p>
+<h1>LLM 평가 통계 <em>다섯 공식</em></h1>
+<p class="subtitle">
+각 공식마다 — <strong>무엇을 재나 · 왜 필요한가 · 우리 숫자 · 언제 깨지나 · 면접에서 어떻게 말하나.</strong>
+</p>
+
+<div class="goal">
+  <h3>이 문서를 쓰는 법</h3>
+  <table>
+    <tr><td>용도</td><td><strong>돌아와서 찾아보는 물건.</strong> 처음 이해는 채팅 브리핑이,
+      맥락은 <a href="../../docs/M6-PLAN.md">M6-PLAN.md</a> 가 맡는다</td></tr>
+    <tr><td>출처 등급</td><td>공식 자체는 표준 통계학 ·
+      <strong>적용 판단</strong>은 Bojie Li 『AI 에이전트를 깊이 이해하기』 7장(인쇄 쪽수 표기) ·
+      <strong>우리 숫자</strong>는 <code>scratch/prompt_2x2.json</code>(n=12)</td></tr>
+    <tr><td>⚠️</td><td>책의 통계 도구 <strong>둘은 우리 규모에서 깨진다.</strong>
+      ①과 ②가 그 자리다 — 책이 틀린 게 아니라 <strong>적용 범위 밖</strong>이다</td></tr>
+  </table>
+</div>
+
+<hr>
+
+<!-- ─────────────────────────────────────────────────────────── -->
+<div class="fx">
+<h2><span class="n">①</span>Wilson score interval — 비율의 신뢰구간</h2>
+<div class="fx-body">
+
+<h3>무엇을 재나</h3>
+<p>
+<strong>"12판 중 8판 성공"이 진짜 성공률에 대해 무엇을 말하나.</strong>
+관측한 <code>p̂ = 8/12</code> 는 표본이고, 알고 싶은 <code>p</code> 는 모집단이다.
+신뢰구간은 그 간극의 크기다.
+</p>
+
+<h3>공식 — 그리고 Wald 와 무엇이 다른가</h3>
+<div class="eq">Wald   (책 인쇄 221)     p̂ ± z·√( p̂(1−p̂)/n )
+
+                    p̂ + z²/2n  ±  z·√( p̂(1−p̂)/n + z²/4n² )
+Wilson             ───────────────────────────────────────────
+                                  1 + z²/n
+
+                    z = 1.96 (95%)</div>
+
+<p>
+<strong>차이는 한 곳뿐이다 — 분모(표준오차)에 무엇을 넣느냐.</strong> 둘 다 같은 부등식을 푼다:
+</p>
+
+<div class="eq">        | p̂ − p |
+       ─────────────  ≤  z
+        SE
+
+Wald    SE = √( p̂(1−p̂)/n )   ← 추정값 p̂ 를 박아 넣고 p 에 대해 푼다 (덧셈 한 번)
+Wilson  SE = √( p(1−p)/n )    ← 미지수 p 를 그대로 두고 이차방정식을 푼다</div>
+
+<div class="iv">
+  <b>면접에서 이렇게</b>
+  <p style="margin:0">
+  "Wald는 표준오차 안에 <strong>추정값</strong>을 박아 넣습니다. 그래서 <code>p̂</code> 가 0이나 1이면
+  <code>p̂(1−p̂) = 0</code> 이 되어 <strong>구간의 폭이 0</strong>이 됩니다 —
+  '12판 다 성공했으니 성공률은 정확히 100%'라는 결론이죠. Wilson은 미지수 <code>p</code> 를
+  분모에 남긴 채 이차방정식을 풀기 때문에 경계에서도 구간이 무너지지 않습니다."
+  </p>
+</div>
+
+<h3>우리 숫자</h3>
+<div class="table-scroll">
+<table>
+<thead><tr><th>측정</th><th>Wald</th><th>Wilson</th><th>결정에 미치는 영향</th></tr></thead>
+<tbody>
+<tr><td>탐지 12/12</td><td><code>[1.000, 1.000]</code> 폭 0</td><td><code>[0.757, 1.000]</code></td>
+    <td>Wald면 "완벽"이라 더 잴 이유가 없다</td></tr>
+<tr><td>오탐 0/3</td><td><code>[0.000, 0.000]</code> 폭 0</td><td><code>[0.000, 0.562]</code></td>
+    <td><strong>D4가 정반대로 갈린다</strong> — 아래</td></tr>
+<tr><td>severity 8/12</td><td><code>[0.395, 0.939]</code></td><td><code>[0.391, 0.862]</code></td>
+    <td>여기선 둘이 비슷하다</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="keystone">
+<code>no_tag_rule</code> 오탐 <strong>0/3</strong> —<br>
+Wald 로 읽으면 <strong>"오탐 완전 해결"</strong>, Wilson 으로 읽으면 <strong>"최대 56%까지 열려 있음"</strong>.<br>
+같은 데이터, 정반대 결정.
+</div>
+
+<div class="brk">
+<strong>⚠️ 언제 깨지나 / 책이 왜 Wald 를 줬나</strong><br>
+책의 예시는 <code>n=100, p=0.7</code> 이다 — <strong>거기선 Wald 가 잘 돈다.</strong>
+Wald 가 무너지는 조건은 <strong>n이 작거나 p̂가 0·1 경계에 붙을 때</strong>이고,
+우리 데이터가 하필 둘 다다. Brown·Cai·DasGupta(2001)가 "standard interval을 쓰지 말라"고
+못 박은 것이 정확히 이 구간이다.
+</div>
+
+</div>
+</div>
+
+<!-- ─────────────────────────────────────────────────────────── -->
+<div class="fx">
+<h2><span class="n">②</span>Pass@k / Pass^k — 그리고 불편추정량</h2>
+<div class="fx-body">
+
+<h3>무엇을 재나</h3>
+<p>
+<strong>같은 질문이 두 개라는 것</strong>이 이 공식의 전부다.
+</p>
+<div class="table-scroll">
+<table>
+<thead><tr><th></th><th>답하는 질문</th><th>쓰는 곳</th></tr></thead>
+<tbody>
+<tr><td><strong>Pass@k</strong></td><td>"이 일을 <strong>할 수 있는가</strong>" — k번 중 하나 이상 성공</td>
+    <td>탐색적 능력 상한</td></tr>
+<tr><td><strong>Pass^k</strong></td><td>"<strong>안정적으로 신뢰할 수 있는가</strong>" — k번 모두 성공</td>
+    <td>비즈니스 신뢰성</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="eq">Pass@k = 1 − (1 − p)^k          Pass^k = p^k          (책 인쇄 200)</div>
+
+<p>
+<strong>우리 제1원칙("틀린 말을 안 하는 것")은 명백히 Pass^k 쪽이다.</strong>
+그런데 우리 완료 판정은 전부 <strong>Pass@1</strong> — 데모를 한 번 돌려 통과하면 ✅.
+</p>
+
+<h3>우리 숫자 (p̂ = 8/12)</h3>
+<div class="eq">        Pass@k          Pass^k
+ k=1     66.7%           66.7%
+ k=4     98.8%   ←→      19.8%      PR 4건 연속
+ k=10   100.0%   ←→       1.7%      PR 10건 연속</div>
+
+<h3>⚠️ 책이 안 다루는 것 — p 를 모를 때</h3>
+<p>
+<code>p^k</code> 는 <strong>p 를 알 때</strong>의 정의다. 우리는 <code>p̂</code> 를 추정할 뿐이고,
+<code>x ↦ x^k</code> 가 <strong>볼록</strong>이라 젠센 부등식에 의해
+</p>
+<div class="eq">E[ p̂^k ]  ≥  ( E[p̂] )^k  =  p^k        ← 거듭제곱하면 신뢰성을 과대평가</div>
+
+<p><strong>쓸 것은 비복원 추출 형태의 불편추정량이다:</strong></p>
+<div class="eq">              C(c, k)
+pass^k  =  ─────────────      c = 성공한 판 수 · n = 전체 판 수
+              C(n, k)</div>
+
+<div class="iv">
+  <b>면접에서 이렇게</b>
+  <p style="margin:0">
+  "n판 중 k판을 <strong>비복원으로</strong> 뽑았을 때 전부 성공일 확률입니다.
+  판들이 <strong>교환가능</strong>하므로 그 기대값이 '앞의 k판이 전부 성공일 확률',
+  즉 정확히 <code>p^k</code> 가 됩니다 — 그래서 불편입니다.
+  <code>p̂^k</code> 를 쓰면 젠센 부등식만큼 위로 뜹니다. HumanEval 의 pass@k 추정량
+  <code>1 − C(n−c,k)/C(n,k)</code> 와 같은 계열이고요."
+  </p>
+</div>
+
+<h3>우리 숫자로 확인 (c=8, n=12)</h3>
+<div class="table-scroll">
+<table>
+<thead><tr><th>k</th><th><code>p̂^k</code> (책)</th><th><code>C(c,k)/C(n,k)</code></th><th>과대</th></tr></thead>
+<tbody>
+<tr><td>3</td><td>0.2963</td><td><strong>0.2545</strong></td><td>1.16배</td></tr>
+<tr><td>5</td><td>0.1317</td><td>0.0707</td><td>1.86배</td></tr>
+<tr><td>8</td><td>0.0390</td><td>0.0020</td><td><strong>19.3배</strong></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>편향을 해석적으로 확인 (p=2/3, n=12, k=3):</p>
+<div class="eq">E[ p̂³ ]        = 0.3328    참값 p³ = 0.2963    편향 = +0.0365
+E[ C(c,3)/C(12,3) ] = 0.2963                        편향 = +0.000000  ✅</div>
+
+<div class="brk">
+<strong>⚠️ 반대 방향 함정</strong><br>
+<strong>여러 픽스처를 합칠 때</strong> 집계 <code>p̄</code> 를 거듭제곱하면 이번엔 <strong>과소</strong>평가다
+(픽스처마다 p가 다르면 <code>E[pᵢᵏ] ≥ p̄ᵏ</code>, 같은 젠센이 반대로 작동).<br>
+→ <strong>픽스처별로 먼저 계산하고 그 평균을 낸다. 절대 반대로 하지 않는다.</strong>
+</div>
+
+<div class="brk">
+<strong>⚠️ 그리고 "판(trial)"이 무엇인지 아직 정의가 없다</strong><br>
+k 가 (a) 에이전트 <strong>1회 호출</strong>의 반복인지 (b) <strong>④⑤ 파이프라인 전체</strong> 실행의
+반복인지가 우리 문서 어디에도 없다. 실측 12판은 (a) 인데 M6 완료 판정 대상은 (b) 다.<br>
+📖 책도 이걸 요구한다 (인쇄 200): <em>"보고서에는 k가 독립 샘플인지 연속 프로덕션 작업인지 명시하고"</em>
+</div>
+
+</div>
+</div>
+
+<!-- ─────────────────────────────────────────────────────────── -->
+<div class="fx">
+<h2><span class="n">③</span>McNemar 대응 검정 — 두 프롬프트 비교</h2>
+<div class="fx-body">
+
+<h3>무엇을 재나</h3>
+<p>
+<strong>"A 프롬프트가 B보다 낫다"가 신호인가 잡음인가.</strong>
+두 성공률을 따로 재서 빼면 안 된다 — <strong>같은 픽스처·같은 시드로 짝지어</strong> 돌린 뒤
+<strong>불일치한 쌍만</strong> 센다.
+</p>
+
+<div class="eq">              B 성공    B 실패
+   A 성공        a         b        ← b: A만 맞힘
+   A 실패        c         d        ← c: B만 맞힘
+
+a, d 는 버린다.  n_d = b + c  (불일치 쌍)
+
+H₀ 아래:  b | n_d  ~  Binomial(n_d, 0.5)
+정확검정 양측 p = 2 · P( X ≤ min(b,c) ),  X ~ Bin(n_d, 0.5)</div>
+
+<div class="iv">
+  <b>면접에서 이렇게</b>
+  <p style="margin:0">
+  "둘 다 맞힌 케이스와 둘 다 틀린 케이스는 <strong>정보가 없습니다</strong> — 문제가 쉽거나
+  어려웠다는 뜻일 뿐이죠. 갈린 케이스만 보면 <strong>문제 난이도라는 공통 잡음이 빠집니다.</strong>
+  그래서 같은 표본 크기에서 독립 두 비율의 차이를 보는 것보다 훨씬 민감합니다."
+  </p>
+</div>
+
+<h3>⚠️ 검정 가능성 사전 검사 — 이게 실무 포인트다</h3>
+<p>
+불일치 쌍이 적으면 <strong>어떤 결과가 나와도 유의가 안 나온다.</strong>
+한쪽 칸이 0일 때의 최소 양측 p 는 <code>2 · 0.5^n_d</code>:
+</p>
+<div class="eq">n_d = 3  →  최소 p = 0.250
+n_d = 4  →           0.125
+n_d = 5  →           0.062
+n_d = 6  →           0.031     ← 여기부터 α=0.05 를 넘길 수 있다</div>
+
+<div class="keystone">
+<strong>n_d &lt; 6 이면 검정을 돌리지 마라.</strong><br>
+답이 이미 정해져 있고, 돌리면 "유의하지 않다"를 "차이가 없다"로 오독하게 된다.
+</div>
+
+<div class="brk">
+<strong>⚠️ 우리가 앞서 쓴 √2 근사에 대해</strong><br>
+차이의 표준오차를 <code>SE₁·√2</code> 로 잡아 <code>차이/SE = 0.87</code> 을 계산했는데,
+📖 책이 직접 단서를 단다 (인쇄 222):
+<em>"앞의 √2 추정은 <strong>명백히 부족한 차이를 빠르게 거르기 위한 보수적인 기준일 뿐</strong>입니다."</em><br>
+→ <strong>거름망으로만 쓴다. "차이 없음"의 증거로 쓰면 안 된다.</strong>
+</div>
+
+</div>
+</div>
+
+<!-- ─────────────────────────────────────────────────────────── -->
+<div class="fx">
+<h2><span class="n">④</span>다중 비교 — 아무것도 안 고쳐도 이기는 것이 나온다</h2>
+<div class="fx-body">
+
+<h3>무엇을 재나</h3>
+<p>
+<strong>가설을 여러 개 동시에 보면 우연히 이기는 게 반드시 나온다.</strong>
+개별 신뢰수준이 95%여도, 독립인 가설 m개 전체에서 최소 1건이 거짓 양성일 확률은:
+</p>
+<div class="eq">FWER = 1 − (1 − α)^m          (family-wise error rate)</div>
+
+<h3>우리 숫자</h3>
+<div class="eq">프롬프트 3 × 픽스처 3 × 축 3(detected/severity/clean) = 가설 27개
+
+1 − 0.95⁶   = 0.265      ← 책의 예시
+1 − 0.95²⁷  = 0.750      ← 우리 설계</div>
+
+<div class="keystone">
+아무 개선이 없어도 <strong>4번 중 3번</strong>은 "어떤 프롬프트가 이겼다"가 나온다.
+</div>
+
+<h3>대응책이 둘이고, 값이 완전히 다르다</h3>
+<p>📖 인쇄 222 — <em>"대응책은 가설 수에 따라 유의성 임계값을 강화하는 Bonferroni식 보정<strong>이나,
+긍정적인 결과를 독립적인 확인 실행에서 재현할 때만 채택하는 것</strong>입니다."</em></p>
+
+<div class="table-scroll">
+<table>
+<thead><tr><th></th><th>무엇을</th><th>비용</th></tr></thead>
+<tbody>
+<tr><td>Bonferroni</td><td><code>α = 0.05/27 = 0.0019</code> 로 문턱을 올린다</td>
+    <td>필요 K가 폭증한다 — <strong>비싸다</strong></td></tr>
+<tr><td><strong>독립 재현</strong></td><td>이긴 <strong>하나만</strong> 새 시드로 다시 돌린다</td>
+    <td><strong>훨씬 싸다</strong> ✅</td></tr>
+<tr><td>가설 줄이기</td><td>축을 3 → 1(핵심 목표)로 좁힌다</td>
+    <td><code>1 − 0.95⁹ = 0.37</code> — 공짜</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="iv">
+  <b>면접에서 이렇게</b>
+  <p style="margin:0">
+  "27개 가설에 Bonferroni를 걸면 α가 0.0019가 되고, 그걸 넘기려면 표본이 몇 배로 듭니다.
+  실무에선 <strong>선별 단계는 느슨하게 두고, 이긴 후보만 독립 실행으로 재현</strong>시키는 쪽이
+  훨씬 쌉니다. 그리고 <strong>가설 수 자체를 줄이는 것</strong>도 대응책입니다 —
+  '무엇을 안 재기로 할 것인가'가 설계 판단이죠."
+  </p>
+</div>
+
+</div>
+</div>
+
+<!-- ─────────────────────────────────────────────────────────── -->
+<div class="fx">
+<h2><span class="n">⑤</span>보정(calibration) — confidence 가 신호인가</h2>
+<div class="fx-body">
+
+<h3>무엇을 재나</h3>
+<p>
+<strong>"확신 90%"라고 말한 것들 중 실제로 90%가 맞나.</strong>
+맞으면 <em>보정됐다(calibrated)</em>고 한다. 우리 <code>INV-3</code> 과 M8 게이트가 통째로 여기 걸린다.
+</p>
+
+<div class="eq">Brier  =  (1/N) · Σ ( confᵢ − yᵢ )²          yᵢ ∈ {0,1}   ← 구간 나눌 필요 없음
+
+ECE    =  Σ_b  (n_b / N) · | acc(b) − conf(b) |    ← 구간 b 로 나눠 가중 평균</div>
+
+<div class="iv">
+  <b>면접에서 이렇게</b>
+  <p style="margin:0">
+  "정확도(accuracy)와 보정(calibration)은 <strong>다른 축</strong>입니다.
+  전부 '확신 100%'라고 외치면서 70%만 맞히는 모델은 정확도는 괜찮아도 보정은 최악이고,
+  <strong>확신도를 게이트에 쓸 수 없습니다.</strong> Brier는 구간을 안 나눠도 되고,
+  ECE는 신뢰도 다이어그램과 짝이라 '어느 구간에서 과신하나'를 볼 수 있습니다."
+  </p>
+</div>
+
+<h3>⚠️ 우리 데이터에 적용할 때 — 계획서의 오류를 여기서 잡았다</h3>
+<p>
+<code>sql-injection</code> 이 12판 전부 <code>confidence=1.00</code> 인 걸 보고
+"확신도가 상수라 보정이 깨졌다"고 쓰기 쉬운데, <strong>그건 틀렸다.</strong>
+</p>
+
+<div class="table-scroll">
+<table>
+<thead><tr><th>finding</th><th>confidence</th><th>실제로 맞았나</th><th>보정 관점</th></tr></thead>
+<tbody>
+<tr><td><code>sql-injection</code></td><td>1.00 × 12</td><td>✅ 진짜 SQL 인젝션이다</td>
+    <td><strong>완벽히 보정됨</strong> — 확신 100%에 정답률 100%</td></tr>
+<tr><td><code>review-evasion-attempt</code></td><td>1.00</td><td>❌ 정상 diff 였다</td>
+    <td><strong>여기가 미보정</strong></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>
+<code>confidence</code> 의 정의는 <code>schema.py:52</code> 에 있다 —
+<em>"이 지적이 <strong>사실일</strong> 확률. 심각도와 무관하게 '내가 틀렸을 가능성'만 본다."</em>
+<strong>severity 가 틀린 것은 confidence 의 관할이 아니다.</strong>
+</p>
+
+<div class="keystone">
+보정은 <strong>finding 하나짜리</strong>가 아니라 <strong>전체 finding 집합</strong>에서만 잴 수 있다.<br>
+그리고 각 finding 에 <strong>맞았다/틀렸다 라벨</strong>이 있어야 한다.
+</div>
+
+<p>
+<strong>따라서 M6-0b(보정 재기)는 M6-0c(<code>expected.yaml</code>)에 의존한다.</strong>
+라벨이 없으면 <code>y_i</code> 가 없고, <code>y_i</code> 가 없으면 Brier 도 ECE 도 계산이 안 된다.
+<a href="../../docs/M6-PLAN.md">M6-PLAN.md</a> 의 순서를 그렇게 고칠 것.
+</p>
+
+<div class="brk">
+<strong>⚠️ 그리고 M6 에서는 답이 안 나올 가능성이 높다</strong><br>
+보정 곡선을 그리려면 confidence 가 <strong>여러 값에 퍼져 있어야</strong> 하는데,
+우리 관측은 대부분 0.9 이상에 몰려 있다. 구간이 하나뿐이면 곡선이 아니라 점 하나다.<br>
+<strong>그것 자체가 결과다</strong> — "확신도가 신호가 아니라 거의 상수"라는 증거이고,
+그게 📖 인쇄 291 <em>"모델이 신뢰도 같은 값을 산출하더라도 검증 전 추정치일 뿐
+<strong>승인 게이트의 근거로 사용하지 않습니다</strong>"</em> 와 만난다 → <strong>D5</strong>.
+</div>
+
+</div>
+</div>
+
+<hr>
+
+<h2>안 쓰기로 한 것 — 그리고 왜</h2>
+
+<div class="table-scroll">
+<table>
+<thead><tr><th>도구</th><th>무엇</th><th>왜 안 쓰나</th></tr></thead>
+<tbody>
+<tr><td><strong>Cohen's kappa</strong></td>
+    <td>두 평가자의 일치도. 우연 일치를 빼고 잰다<br><code>κ = (p₀ − pₑ)/(1 − pₑ)</code></td>
+    <td>📖 인쇄 201·202 가 LLM 심판 도입 전 <strong>gold set 100~200 + κ ≥ 0.7</strong> 을 요구하는데,
+        <strong>우리는 LLM 심판을 안 쓴다.</strong> 그리고 우리 8:4 흔들림은 <em>서로 다른 심판</em> 사이가
+        아니라 <em>같은 프롬프트의 반복 샘플링</em>이라 κ 가 재는 양이 아니다</td></tr>
+<tr><td><strong>LLM-as-a-Judge</strong></td>
+    <td>다른 모델이 출력을 채점</td>
+    <td>📖 인쇄 210 — <em>"코드 기반 자동 검증은 표준 정답이 있는 시나리오만 다룰 수 있으므로,
+        <strong>개방형 작업의 채점이 이 절의 주제</strong>"</em> → 우리는 정답이 있는 쪽.
+        그리고 <strong>재보정 조항</strong>이 결정적이다 — 프롬프트를 고치면 루브릭이 바뀌고,
+        바뀔 때마다 재보정 비용이 붙는다</td></tr>
+<tr><td>Text similarity<br>(BLEU·ROUGE)</td>
+    <td>참조 답안과의 문자열 유사도</td>
+    <td>rationale 은 같은 말을 매번 다른 문장으로 쓴다(실측). 유사도가 낮아도 같은 지적이다</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="iv">
+  <b>면접에서 이렇게 — "왜 LLM 심판을 안 썼나요?"</b>
+  <p style="margin:0">
+  "심판을 쓰면 <strong>심판을 검증하는 문제</strong>가 새로 생깁니다. 업계 관행은 사람이 라벨링한
+  100~200건의 gold set으로 일치도를 재고, 임계값을 넘긴 뒤에만 대규모로 쓰는 겁니다.
+  <strong>그런데 루브릭이 바뀔 때마다 재보정해야 하고</strong>, 우리 단계는 프롬프트를 계속 고치는
+  단계라 루브릭이 계속 바뀝니다. 무엇보다 <strong>우리는 정답을 알고 있습니다</strong> —
+  픽스처에 버그를 우리가 심었으니까요. 정답이 있으면 채점이 판단이 아니라 <strong>조회</strong>가 됩니다."
+  </p>
+</div>
+
+<div class="footer">
+  <h3>1차 출처</h3>
+  <ul>
+    <li>Bojie Li, 『AI 에이전트를 깊이 이해하기』 <strong>7장 에이전트 평가</strong>(인쇄 198~232) ·
+      9.3.2(인쇄 291). 특히 <strong>7.2.2</strong>(Pass^k) · <strong>7.7</strong>(통계적 유의성) ·
+      <strong>7.5.1</strong>(LLM-as-a-Judge)</li>
+    <li><a href="https://developers.openai.com/api/docs/guides/graders">OpenAI API — Graders</a> ·
+      grader 5종 분류(String check / Text similarity / Score model / <strong>Python</strong> / Multigrader)</li>
+    <li>Brown, Cai, DasGupta (2001), <em>Interval Estimation for a Binomial Proportion</em>,
+      Statistical Science — Wald 를 쓰지 말라는 근거</li>
+    <li>우리 실측 — <code>scratch/prompt_variance.json</code>(3판) ·
+      <code>scratch/prompt_2x2.json</code>(12판) ·
+      <a href="prompt-variance-trace.html">실행 추적</a></li>
+  </ul>
+
+  <h3>다음</h3>
+  <ul class="next-steps">
+    <li><a href="../../docs/M6-PLAN.md">M6-PLAN.md</a> — 각 공식이 어느 단계에서 코드가 되나</li>
+    <li><a href="../../docs/research/0002-book-vs-research.md">책 대조 리포트</a> — 이 공식들이 나온 자리</li>
+    <li><code>backend/eval/stats.py</code> — <strong>아직 없다.</strong> M6-1 에서 만든다</li>
+  </ul>
+
+  <p style="margin-top:1.5rem">
+    <strong>혼자 해보면 좋은 것:</strong> <code>scratch/prompt_2x2.json</code> 을 열고
+    <strong>Wald 와 Wilson 을 손으로 각각 계산</strong>해 볼 것.
+    <code>0/3</code> 에서 두 값이 갈리는 걸 직접 보고 나면,
+    "구간 폭이 0"이라는 게 왜 경고 신호인지 표로 읽는 것과 완전히 다르게 남는다.
+  </p>
+
+  <p>막히거나 애매한 부분은 그대로 물어보면 된다.</p>
+</div>
+
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

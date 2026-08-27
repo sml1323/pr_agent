@@ -222,6 +222,42 @@ li { margin-bottom: 0.4rem; }
 }
 .next-steps li:last-child { border-bottom: none; }
 
+/* ── 목표 블록 ────────────────────────────────────
+ * 모든 레슨의 제목 바로 밑에 온다. 없으면 읽는 사람이
+ * "왜 읽는지" 모른 채 장면부터 만나게 된다 (2026-08-25 규칙화).
+ * 다섯 칸 고정: 무엇을 / 왜 지금 / 끝나면 / 안 다루는 것 / 분량.
+ * ⚠️ "끝나면" 은 감상이 아니라 할 수 있게 되는 일이어야 한다.
+ *    "이해한다" ✗ / "고를 수 있다 · 구분할 수 있다 · 근거를 댈 수 있다" ○
+ */
+
+.goal {
+  border: 1px solid var(--rule);
+  border-left: 4px solid var(--accent, #b5544a);
+  border-radius: 4px;
+  padding: 1.1rem 1.3rem 0.9rem;
+  margin: 0 0 2.2rem;
+  background: color-mix(in srgb, var(--code-bg) 40%, transparent);
+}
+.goal h3 {
+  margin: 0 0 0.7rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+.goal table { width: 100%; border-collapse: collapse; margin: 0; }
+.goal td { padding: 0.4rem 0; vertical-align: top; border: none; font-size: 0.93rem; }
+.goal td:first-child {
+  width: 6.6rem;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 0.8rem;
+  padding-right: 1rem;
+  padding-top: 0.5rem;
+}
+.goal tr + tr td { border-top: 1px solid var(--rule); }
+
 /* ── 인쇄 ─────────────────────────────────────── */
 
 @media print {

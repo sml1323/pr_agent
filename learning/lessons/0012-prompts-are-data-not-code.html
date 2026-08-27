@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 12 — 프롬프트는 코드가 아니라 데이터다</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Lesson 12 · M6-1 · backend/prompts/</p>
+<h1>프롬프트는 코드가 아니라<br><em>데이터</em>다</h1>
+<p class="subtitle">고쳤는데 나빠졌다 — 그걸 <strong>어떻게 아나</strong>가 이 레슨의 전부다.</p>
+
+<div class="goal">
+  <h3>이 레슨의 목표</h3>
+  <table>
+    <tr><td>무엇을</td><td><strong>프롬프트를 고쳤을 때 "좋아졌나"를 판정하는 법</strong> — 그 판정에 필요한 게 뭔지</td></tr>
+    <tr><td>왜 지금</td><td>M6-1 에서 <code>SYSTEM_PROMPT</code> 하나가 <strong>넷</strong>으로 갈린다.
+      하나가 넷이 되는 순간 "어느 걸 고쳤더니 어떻게 됐나"가 처음으로 답할 수 없는 질문이 된다</td></tr>
+    <tr><td>끝나면</td><td>
+      ① <code>backend/prompts/</code> 를 <strong>파일 하나로 둘지 번호를 붙일지</strong> 고를 수 있다<br>
+      ② 프롬프트에 <strong>무엇을 <code>assert</code> 할 수 있고 무엇은 못 하는지</strong> 구분할 수 있다<br>
+      ③ 영상의 "프롬프트 레지스트리"를 <strong>왜 안 만드는지</strong> 근거를 댈 수 있다</td></tr>
+    <tr><td>안 다루는 것</td><td>정식 eval 하네스(M9, 범위 밖) · confidence 캘리브레이션 · 프롬프트 작성 요령</td></tr>
+    <tr><td>분량</td><td>10분 · 1차 출처 3개 · 퀴즈 2문</td></tr>
+  </table>
+</div>
+
+<h2>장면부터 — 아무것도 안 고쳤는데 달라졌다</h2>
+
+<p>
+<strong>실제로 돌린 것이다.</strong> 코드도 프롬프트도 한 글자 안 고치고,
+같은 <code>fixtures/sample.diff</code> 를 <strong>세 번</strong> 넣었다
+(<code>scratch/recon_prompt_variance.py</code>, 2026-08-25):
+</p>
+
+<pre><code><span class="c-comment"># 판 1 · 15.85초</span>
+[critical] sql-injection            :17  conf=1.00
+[medium  ] resource-leak            :18  conf=0.87
+[low     ] missing-docstring        :14  conf=0.96
+
+<span class="c-comment"># 판 2 · 24.35초</span>
+[critical] sql-injection            :17  conf=1.00
+[medium  ] resource-leak            :18  conf=0.98
+<span class="c-bad">[critical] review-evasion-attempt   :14  conf=1.00   ← ?</span>
+
+<span class="c-comment"># 판 3 · 12.96초</span>
+[critical] sql-injection            :17  conf=1.00
+[medium  ] resource-leak            <span class="c-bad">:14</span>  conf=0.96</code></pre>
+
+<p>
+판 2 의 저 <code>critical</code> 은 <strong>거짓 양성</strong>이다 —
+<code>sample.diff</code> 에는 인젝션 문구가 한 줄도 없다.
+rationale 을 열어보면 범인이 우리다:
+</p>
+
+<p class="callout">
+<em>"입력 diff에 <code>&lt;untrusted_diff&gt;</code> 태그를 열고 닫는 문자열이 포함되어 있습니다."</em><br>
+— 판 2 의 <code>rationale</code> (실측)
+</p>
+
+<p>
+<code>build_user_message()</code> 가 씌운 <strong>감옥의 벽</strong>을 모델이
+<strong>죄수의 낙서</strong>로 읽었다. <code>base.py:103</code> 의 TODO 주석이 이미 물어봤던 그 질문이다 —
+<em>"이 문자열이 diff 안에 나타날 수 있나?"</em>
+</p>
+
+<div class="keystone">
+이게 세 판 중 한 판만 나온다.<br>
+<strong>그래서 한 번 돌려보고는 있는지 없는지조차 알 수 없다.</strong>
+</div>
+
+<p>
+<code>severity=critical</code> 이라 M8 게이트가 무조건 사람에게 보내고,
+<code>confidence=1.0</code> 이라 확신도 필터도 못 거른다.
+<strong>이 프로젝트 제1원칙("틀린 말을 안 하는 것") 정면 위반</strong>인데,
+<span style="border-bottom:2px solid currentColor">테스트로는 잡을 방법이 없다.</span>
+아래 절이 왜 없는지를 설명한다.
+</p>
+
+<h2>코드와 프롬프트는 대칭이 아니다</h2>
+
+<div class="table-scroll">
+<table>
+<thead>
+<tr><th></th><th>같은 입력 → 같은 출력?</th><th>회귀를 무엇이 잡나</th></tr>
+</thead>
+<tbody>
+<tr><td><code>verify_signature()</code></td><td>⭕ 항상</td><td><strong>테스트</strong> — 통과/실패 두 값</td></tr>
+<tr><td><code>SYSTEM_PROMPT</code></td><td>❌ 매번 다르다</td><td>테스트가 <strong>없다</strong> — 뭘 단언하나</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>
+<code>assert len(findings) == 5</code> 를 쓰면 프롬프트를 안 고쳐도 언젠가 깨진다.
+우리 모델(<code>gpt-5.6-luna</code>)은 output 토큰의 절반 가까이가 reasoning 이다
+(M0 실측: 475 중 291). <strong>매번 다르게 생각하고 매번 다르게 답한다.</strong>
+</p>
+
+<p>
+그래서 프롬프트에 필요한 건 <em>통과/실패</em> 가 아니라 <strong>같은 자로 잰 두 숫자</strong>다.
+그 자를 뭐라고 부르는지는 이미 이름이 있다:
+</p>
+
+<p class="callout">
+<span class="label">1차 출처 ①</span>
+<em>"Graders <strong>persist as you make changes to your dataset and prompt</strong>,
+making them a great way to quickly assess whether a prompt or model parameter change
+leads to improvements."</em><br>
+— <a href="https://developers.openai.com/api/docs/guides/graders">OpenAI API — Graders</a>
+</p>
+
+<div class="keystone">
+고정되는 건 <strong>채점자와 입력 묶음</strong>이고,<br>
+움직이는 건 프롬프트다. 지금 우리는 <strong>거꾸로</strong> 하고 있다.
+</div>
+
+<h3>그런데 우리는 자의 재료를 이미 갖고 있다</h3>
+
+<p>
+<code>fixtures/</code> 에 셋이 있다 — <code>sample.diff</code>(정상) ·
+<code>sample_injected.diff</code>(인젝션) · <code>sample_emotional.diff</code>(사회공학).
+<strong>정답을 우리가 안다.</strong> 인젝션 fixture 에서 회피 시도를 못 잡으면 그건 회귀다.
+숫자를 셀 필요도 없다.
+</p>
+
+<p>
+없는 건 데이터가 아니라 <strong>"이 셋을 매번 같은 방식으로 돌려 비교하는 자리"</strong>다.
+그게 아래 1차 출처가 <code>eval fixtures</code> 라고 부르는 것이다.
+</p>
+
+<h2>영상의 전제가 또 뒤집혔다</h2>
+
+<p>
+원본 영상은 <strong>"프롬프트 레지스트리를 만들어라, 덮어쓰기 금지"</strong> [01:49:29] 라고 한다.
+OpenAI 는 <strong>실제로 그 서비스를 만들었다가 접는 중이다</strong>:
+</p>
+
+<p class="callout">
+<span class="label">1차 출처 ②</span>
+<em>"Prompt creation will be de-emphasized beginning <strong>June 3, 2026</strong>,
+and <code>v1/prompts</code> is scheduled to shut down on <strong>November 30, 2026</strong>."</em><br><br>
+<em>"Move the prompt content out of the managed <code>prompt</code> object and
+<strong>into your application code</strong>. This gives you more control over
+review, testing, deployment, and versioning."</em><br><br>
+<em>"<strong>Don't scatter prompts inline across the codebase.</strong>
+Create a small <code>prompts/</code> module, keep each prompt as a
+<strong>named builder function</strong>, and add <strong>lightweight eval fixtures</strong>
+so prompt changes are reviewed like product logic."</em><br>
+— <a href="https://developers.openai.com/api/docs/guides/prompting/migrate-from-prompt-object">OpenAI API — Migrate from prompt objects</a>
+</p>
+
+<p>
+읽는 법이 두 겹이다:
+</p>
+
+<ul>
+  <li><strong>영상이 노린 것은 살아있다</strong> — 프롬프트를 코드에서 떼어내 별도 모듈로,
+    리뷰와 테스트를 붙여서. 우리 <code>backend/prompts/</code> 가 그 문장 그대로다.</li>
+  <li><strong>다만 서비스로 만들지 않는다</strong> — 만든 쪽이 3개월 뒤 끄는 물건을
+    우리가 다시 만들 이유가 없다. 저장소는 이미 있다. <strong>git 이다.</strong></li>
+</ul>
+
+<h2>"덮어쓰기 금지"의 정확한 모양</h2>
+
+<p>
+그럼 불변성은 어디서 오나. 실제로 도는 시스템 하나가 답을 보여준다 — LangSmith 의 프롬프트 허브:
+</p>
+
+<p class="callout">
+<span class="label">1차 출처 ③</span>
+<em>"Commit tags are labels that reference a specific commit in your prompt's version history."</em> ·
+<em>"Each tag references exactly one commit, though <strong>you can reassign a tag</strong>
+to point to a different commit."</em> ·
+<em>"By <strong>referencing tags rather than commit IDs</strong> in your code, you can update
+which version is being used without modifying the code itself."</em><br>
+— <a href="https://docs.langchain.com/langsmith/manage-prompts">LangSmith — Manage prompts</a>
+</p>
+
+<div class="table-scroll">
+<table>
+<thead>
+<tr><th></th><th>가리키는 것</th><th>움직이나</th><th>같은 모양</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>commit</strong></td><td>프롬프트 내용 한 벌</td><td>❌ 불변</td><td>git commit · <code>003_immutable.sql</code></td></tr>
+<tr><td><strong>tag</strong></td><td>commit 하나</td><td>⭕ 옮긴다</td><td>git branch · <code>latest</code> 심볼릭 링크</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>
+<strong>"덮어쓰기 금지"는 내용에만 걸린다.</strong> 무엇을 쓸지 고르는 포인터는 자유롭게 움직인다.
+둘을 한 덩어리로 보면 "그럼 프롬프트를 영영 못 고치나?" 라는 막다른 길로 간다.
+</p>
+
+<h2>그래서 갈림길 — 파일 이름에 번호를 다나</h2>
+
+<p>
+git 이 이미 commit 을 준다. 그럼 <code>security_v1.py</code> 같은 번호가 왜 또 필요한가?
+</p>
+
+<div class="table-scroll">
+<table>
+<thead>
+<tr><th></th><th>(A) 번호 붙인 불변 파일</th><th>(B) 파일 하나 + git</th></tr>
+</thead>
+<tbody>
+<tr><td>모양</td><td><code>security/v1.py</code> <code>v2.py</code></td><td><code>security.py</code></td></tr>
+<tr><td>고칠 때</td><td>새 파일을 만든다</td><td>그 파일을 고친다</td></tr>
+<tr><td>돌던 코드가 자기 버전을</td><td><strong>안다</strong> (문자열 <code>"v2"</code>)</td><td><strong>모른다</strong> (심어야 안다)</td></tr>
+<tr><td>파일 수</td><td>계속 는다</td><td>넷 고정</td></tr>
+<tr><td>둘을 나란히 돌리기</td><td>import 두 개</td><td>못 한다 (브랜치를 갈아야)</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>
+<strong>판별 기준은 취향이 아니라 우리가 이미 지고 있는 제약이다.</strong>
+M3 의 <code>record_event()</code> 가 <code>agent_events</code> 에 호출 기록을 남기고,
+그 표는 <strong>INV-4 로 지울 수 없다</strong>. 3주 뒤 "이 finding 은 어느 프롬프트가 만든 건가"를
+묻게 되는데 —
+</p>
+
+<div class="keystone">
+그 답이 <strong>실행 시점에 문자열로 있어야</strong> 기록에 남는다.<br>
+git SHA 는 파일 안에 안 적혀 있다. 코드는 자기가 어느 커밋인지 모른다.
+</div>
+
+<p>
+그리고 우리는 <strong>같은 모양을 이미 하나 갖고 있다</strong> —
+<code>migrations/001_extensions.sql</code> 부터 <code>004_truth.sql</code> 까지.
+거기서 번호를 단 이유를 그대로 옮겨올 수 있는지, 아니면 다른 상황인지가 이번 판단이다.
+</p>
+
+<hr>
+
+<h2>회상 연습</h2>
+
+<div class="quiz" data-answer="2">
+  <p class="quiz-q">프롬프트를 한 줄 고치고 다시 돌렸더니 findings 가 3개에서 2개가 됐다. 회귀인지 개선인지 판정하려면 <strong>무엇이 고정돼 있어야</strong> 하나?</p>
+  <ol class="quiz-opts">
+    <li data-fb="고정하면 흔들림은 줄지만 '좋아졌나'의 기준은 여전히 없다. 숫자 둘을 비교할 자가 없는 건 그대로다.">모델 이름과 호출 파라미터</li>
+    <li data-fb="맞다. 1차 출처의 grader 가 그것이다 — 'persist as you make changes to your dataset and prompt'. 자가 안 움직여야 두 숫자를 비교할 수 있다.">채점 기준과 입력 데이터셋</li>
+    <li data-fb="스키마는 형식을 강제하지 내용을 판정하지 않는다. Lesson 01·02 에서 이미 갈린 자리다.">출력 스키마의 필드 목록</li>
+    <li data-fb="번호는 '무엇을 비교했나'를 적을 뿐 '어느 쪽이 나은가'를 말해주지 않는다.">프롬프트 파일의 버전 번호</li>
+  </ol>
+</div>
+
+<div class="quiz" data-answer="2">
+  <p class="quiz-q">git 이 이미 커밋으로 버전을 준다. 그런데도 프롬프트 <strong>파일 이름에 번호를 다는</strong> 이유로 가장 강한 것은?</p>
+  <ol class="quiz-opts">
+    <li data-fb="git 히스토리는 사라지지 않는다. 이건 번호를 다는 이유가 못 된다.">git 히스토리가 지워질 수 있어서</li>
+    <li data-fb="맞다. 실행 중인 코드는 자기 커밋 SHA 를 모른다. 파일 이름의 번호는 런타임에 문자열로 존재해서 agent_events 에 그대로 실린다 — INV-4 라 영구적이다.">돌아가는 코드가 자기 버전을 남겨서</li>
+    <li data-fb="git revert 가 이미 빠르다. 속도는 갈림길이 아니다.">롤백할 때 되돌리기가 빨라져서</li>
+    <li data-fb="diff 가독성은 오히려 (B) 가 낫다 — 새 파일은 전체가 추가로 보인다.">리뷰어가 변경점을 읽기 편해서</li>
+  </ol>
+</div>
+
+<div class="footer">
+  <h3>1차 출처 — 이건 꼭 읽을 것</h3>
+  <p>
+    <a href="https://developers.openai.com/api/docs/guides/prompting/migrate-from-prompt-object">OpenAI — Migrate from prompt objects</a>
+    한 페이지. <strong>짧고, 우리가 만들 <code>backend/prompts/</code> 의 설계도가 그대로 적혀 있다.</strong>
+    "만들었다가 접는 쪽이 남긴 권고"라는 점에서 등급이 높은 출처다.
+  </p>
+  <p>
+    여유가 있으면 <a href="https://developers.openai.com/cookbook/examples/evaluation/use-cases/regression">OpenAI Cookbook — Detecting prompt regressions</a> 도.
+    M9(범위 밖)의 물건이지만 <strong>"자를 먼저 만든다"</strong> 의 실물이다.
+  </p>
+
+  <h3>다음</h3>
+  <ul class="next-steps">
+    <li><strong>시뮬레이터로 굴려보기</strong> — 프롬프트를 고치고 같은 fixture 를 다시 돌려볼 것</li>
+    <li><strong><code>NOTEBOOK.md</code> 에 내 말로 3줄</strong> — 이 레슨을 다시 열지 말고</li>
+    <li><strong>M6-1 의 <code>TODO(human)</code></strong> — (A)/(B) 를 고르는 자리가 거기다</li>
+    <li><a href="0001-schema-not-prompt.html">Lesson 01 — 스키마로 강제하라</a> · 프롬프트가 <em>부탁</em>인 이유</li>
+    <li><a href="0002-untrusted-diff.html">Lesson 02 — diff 는 공격자의 글이다</a> · 넷으로 갈라도 <strong>같이 가야 하는</strong> 문장들</li>
+  </ul>
+
+  <p style="margin-top:1.5rem">
+    <strong>혼자 해보면 좋은 것:</strong> <code>backend/agents/base.py</code> 의
+    <code>SYSTEM_PROMPT</code> 를 열고 <strong>줄마다 표시해 볼 것</strong> —
+    넷이 <em>공유해야</em> 하는 줄인가, 관점 하나<em>만</em>의 줄인가.
+    트러스트 바운더리 문단과 <code>@@</code> line 계산 규칙이 어느 쪽인지가
+    M6-1 의 첫 결정이다. 표시를 먼저 하고 나면 파일을 어떻게 쪼갤지가 거의 정해진다.
+  </p>
+
+  <p>
+    막히거나 애매한 부분은 그대로 물어보면 된다. 이 레슨을 쓴 에이전트가 선생이다.
+  </p>
+</div>
+
+<script src="../assets/quiz.js"></script>
+</body>
+</html>
