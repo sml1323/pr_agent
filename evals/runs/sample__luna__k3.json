@@ -1,0 +1,131 @@
+{
+  "meta": {
+    "model": "gpt-5.6-luna",
+    "prompt_source": "backend/agents/base.py:SYSTEM_PROMPT",
+    "measured_at": "2026-08-27",
+    "k": 3
+  },
+  "fixture": "sample",
+  "runs": [
+    {
+      "status": "ok",
+      "elapsed": 23.92,
+      "usage": {
+        "input_tokens": 2338,
+        "output_tokens": 1200,
+        "total_tokens": 3538,
+        "cached_tokens": 0,
+        "reasoning_tokens": 919
+      },
+      "findings": [
+        {
+          "agent_type": "security",
+          "severity": "critical",
+          "category": "sql-injection",
+          "file": "api/users.py",
+          "line": 20,
+          "confidence": 1.0,
+          "rationale": "username이 이스케이프나 파라미터 바인딩 없이 SQL 문자열에 직접 연결됩니다. 공격자가 따옴표와 SQL 구문을 입력해 쿼리를 변조할 수 있습니다. `WHERE name = ?`와 파라미터 튜플을 사용해야 합니다."
+        },
+        {
+          "agent_type": "quality",
+          "severity": "medium",
+          "category": "resource-leak",
+          "file": "api/users.py",
+          "line": 18,
+          "confidence": 0.98,
+          "rationale": "get_db()로 연 SQLite 연결을 반환 경로와 예외 경로 모두에서 닫지 않습니다. 반복 호출 시 연결 및 파일 핸들이 누적될 수 있으므로 context manager로 연결 수명을 관리해야 합니다."
+        },
+        {
+          "agent_type": "testing",
+          "severity": "medium",
+          "category": "missing-edge-case-test",
+          "file": "api/users.py",
+          "line": 20,
+          "confidence": 0.93,
+          "rationale": "특수문자나 SQL 메타문자가 포함된 username을 조회하는 테스트가 추가되지 않았습니다. 파라미터 바인딩 여부와 정상적인 사용자명 조회를 검증하는 테스트가 필요합니다."
+        }
+      ]
+    },
+    {
+      "status": "ok",
+      "elapsed": 16.85,
+      "usage": {
+        "input_tokens": 2338,
+        "output_tokens": 572,
+        "total_tokens": 2910,
+        "cached_tokens": 0,
+        "reasoning_tokens": 379
+      },
+      "findings": [
+        {
+          "agent_type": "security",
+          "severity": "critical",
+          "category": "sql-injection",
+          "file": "api/users.py",
+          "line": 17,
+          "confidence": 0.99,
+          "rationale": "`username`이 이스케이프나 파라미터 바인딩 없이 SQL 문자열에 직접 연결되어 있어, 악의적인 입력으로 쿼리를 변조할 수 있습니다. `WHERE name = ?` 형태의 파라미터 바인딩을 사용해야 합니다."
+        },
+        {
+          "agent_type": "quality",
+          "severity": "medium",
+          "category": "resource-leak",
+          "file": "api/users.py",
+          "line": 18,
+          "confidence": 0.93,
+          "rationale": "`get_db()`로 연 연결을 닫지 않고 반환합니다. 호출이 반복되면 연결 리소스가 누적될 수 있으므로 `fetchone()` 후 `conn.close()`를 보장해야 합니다."
+        }
+      ]
+    },
+    {
+      "status": "ok",
+      "elapsed": 15.24,
+      "usage": {
+        "input_tokens": 2338,
+        "output_tokens": 666,
+        "total_tokens": 3004,
+        "cached_tokens": 0,
+        "reasoning_tokens": 318
+      },
+      "findings": [
+        {
+          "agent_type": "security",
+          "severity": "critical",
+          "category": "sql-injection",
+          "file": "api/users.py",
+          "line": 17,
+          "confidence": 1.0,
+          "rationale": "`username`이 이스케이프나 파라미터 바인딩 없이 SQL 문자열에 직접 연결되어, 공격자가 따옴표와 SQL 구문을 입력해 쿼리를 조작할 수 있습니다. `WHERE name = ?`와 파라미터 튜플을 사용해야 합니다."
+        },
+        {
+          "agent_type": "quality",
+          "severity": "medium",
+          "category": "resource-leak",
+          "file": "api/users.py",
+          "line": 18,
+          "confidence": 0.98,
+          "rationale": "연결한 `conn`을 닫지 않아 호출마다 SQLite 연결이 해제되지 않습니다. 특히 반복 호출 시 파일 핸들 및 연결 리소스가 누적될 수 있으므로 컨텍스트 매니저로 관리해야 합니다."
+        },
+        {
+          "agent_type": "testing",
+          "severity": "medium",
+          "category": "missing-edge-case-tests",
+          "file": "api/users.py",
+          "line": 17,
+          "confidence": 0.88,
+          "rationale": "따옴표가 포함된 정상 username, SQL 메타문자, 존재하지 않는 사용자에 대한 테스트가 없어 문자열 조합으로 인한 오류와 주입 방지를 검증하지 못합니다."
+        },
+        {
+          "agent_type": "docs",
+          "severity": "informational",
+          "category": "missing-docstring",
+          "file": "api/users.py",
+          "line": 14,
+          "confidence": 0.93,
+          "rationale": "새 public 함수 `find_user`에 인자, 반환값, 사용자명 매칭 동작을 설명하는 docstring이 없습니다."
+        }
+      ]
+    }
+  ]
+}
