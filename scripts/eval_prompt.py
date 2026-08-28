@@ -32,6 +32,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from backend.agents.base import MODEL, review_diff  # noqa: E402
+from backend.agents.schema import AgentType  # noqa: E402
 from evals.grader import RunGrade, grade_run, load_expected  # noqa: E402
 from evals.stats import wilson_ci  # noqa: E402
 
@@ -98,11 +99,17 @@ FIXTURES_DIR = ROOT / "fixtures"
 #      하나도 못 맞추므로 grader 가 **자연스럽게 실패로 센다** — 분모 처리를 위해
 #      채점 쪽에 예외를 만들 필요가 없다. `error` 만 `findings` 키가 없다.
 # ──────────────────────────────────────────────────────────────────────
-def run_once(diff_text: str) -> tuple[str, dict[str, Any]]:
-    """한 판 호출한다. 실패를 어떻게 분류할지가 이 함수의 전부다."""
+def run_once(diff_text: str, agent_type: AgentType = "security") -> tuple[str, dict[str, Any]]:
+    """한 판 호출한다. 실패를 어떻게 분류할지가 이 함수의 전부다.
+
+    ⚠️ `agent_type` 에 기본값이 있는 건 **임시다** (2026-08-28, M6-4 1차 조각).
+       `review_diff` 는 일부러 기본값을 안 줬는데 여기서 다시 준 셈이라,
+       파일명·meta 에 관점이 안 남는다 — 옛 18판과 같은 문제다.
+       **다음 조각에서 CLI 인자로 올리고 파일명 축으로 연다** (variant 슬롯과 함께).
+    """
     started = time.monotonic()
     try:
-        result, usage = review_diff(diff_text)
+        findings, usage = review_diff(diff_text, agent_type)
     except RuntimeError as e:
         # base.py 가 거부를 RuntimeError 로 감싸 던진다 (output_parsed is None).
         # findings 를 빈 리스트로 남겨야 분모에 들어간다 — 위 메모 참조.
@@ -125,7 +132,7 @@ def run_once(diff_text: str) -> tuple[str, dict[str, Any]]:
     return "ok", {
         "elapsed": round(time.monotonic() - started, 2),
         "usage": _usage_dict(usage),
-        "findings": [f.model_dump() for f in result.findings],
+        "findings": [f.model_dump() for f in findings],
     }
 
 
@@ -200,7 +207,9 @@ def _usage_dict(usage: object) -> dict[str, Any]:
 #
 # 반환값 계약: `(파일명, meta dict)`. meta 는 저장 파일의 `"meta"` 키에 그대로 들어간다.
 # ──────────────────────────────────────────────────────────────────────
-PROMPT_SOURCE = "backend/agents/base.py:SYSTEM_PROMPT"  # M6-4 에서 backend/prompts/ 로 바뀐다
+# 2026-08-28 M6-4: `base.py:SYSTEM_PROMPT` 는 삭제됐다. 이제 조립 결과를 쓴다.
+# ⚠️ 이 값이 바뀌었으므로 **옛 18판과 새 판은 비교 대상이 아니다** (📖 인쇄 219).
+PROMPT_SOURCE = "backend/prompts/review.py:build_review_system_prompt"
 
 # 프롬프트 변형의 짧은 이름. 파일명에 들어가므로 조건이 다르면 파일도 갈린다.
 #

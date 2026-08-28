@@ -39,7 +39,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 
-from backend.agents.schema import Finding
+from backend.agents.schema import SourcedFinding
 from backend.orchestration.engine import WorkflowEngine
 from backend.orchestration.state import ReviewState
 
@@ -60,9 +60,10 @@ log = logging.getLogger(__name__)
 # 넷을 한 함수로 만들 수도 있지만(클로저 / functools.partial) 명시적으로 폈다.
 # M6 에서 각자 다른 프롬프트를 갖게 되면 어차피 여기서 갈린다.
 # ─────────────────────────────────────────────────────────────
-def _dummy_finding(agent_type: AgentType) -> Finding:
+def _dummy_finding(agent_type: AgentType) -> SourcedFinding:
     """M6 까지 쓸 자리표시자. 진짜 LLM 응답은 M6 에서 붙는다."""
-    return Finding(
+    # 2026-08-28 M6-4: `Finding` 에 agent_type 이 없어졌다 → 출처가 붙은 쪽을 쓴다.
+    return SourcedFinding(
         agent_type=agent_type,
         severity="low",
         category=f"dummy-{agent_type}",
@@ -155,7 +156,7 @@ AGENT_TIMEOUT_SECONDS: float = 1.0
 _TICK = 0.02
 
 
-def _call_agent(agent_type: AgentType) -> Finding:
+def _call_agent(agent_type: AgentType) -> SourcedFinding:
     """M6 에서 **진짜 LLM 호출**이 될 자리. 지금은 흉내만 낸다.
 
     ⚠️ 실패하면 예외를 **던진다.** 진짜 API 도 그렇게 실패한다 —

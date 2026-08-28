@@ -28,10 +28,10 @@
 ⚠️ 정책 상수(`confidence >= 0.6` 같은 것)를 여기 넣지 말 것 — M8 `backend/gate/` 의 몫이다.
 """
 
-from typing import Literal
-
-AgentType = Literal["security", "quality", "testing", "docs"]
-
+# ⚠️ `AgentType` 은 여기서 정의하지 않는다 (2026-08-28, M6-4).
+#    집은 `backend/agents/schema.py` 다 — 도메인 어휘라서. 근거는 그 파일에.
+#    의존 방향: 프롬프트 → 계약. 반대로 두면 계약이 프롬프트를 알게 된다.
+from backend.agents.schema import AgentType
 
 # ─────────────────────────────────────────────────────────────────────
 # 정적 블록 — 넷이 공유한다. 캐시 접두부 안쪽에 있어야 하므로 앞에 온다.
