@@ -617,6 +617,61 @@ diff 509,615자 31파일 → 리뷰 17,940자 6파일 · 안 봄 25파일
   🙋 review-evasion-attempt (critical, conf 1.00) → 사람에게   ← 규칙이 실전에서 오탐을 잡았다
 ```
 
+#### 📌 **PR #3 — 시스템이 자기 자신을 리뷰했다** (2026-08-30)
+
+https://github.com/sml1323/pr_agent/pull/3 · 브랜치 `m8-gate-e2e` (base: `m6-agents`)
+
+```
+148,906자 20파일 → 리뷰 19,933자 5파일 · 79.5초 · API 4회
+게이트: 자동 게시 8 · 사람 3 (전부 review-evasion-attempt 오탐)
+```
+
+**지적 대부분이 진짜였다.** 그중 셋을 고쳤다 (커밋 `af0eb20`):
+- `misleading-documentation` (1.00) — **코멘트가 거짓말하고 있었다.** *"확신이 낮거나 심각도가
+  높아 보류"* 라고 적었는데 `decide()` 는 confidence·severity 를 안 본다. 게이트가 category
+  기반으로 바뀔 때 문구만 남았다
+- `human-handoff`(0.96) · `human-review-visibility`(0.93) — `to_human` 이 건수만 나와서
+  사람이 무엇을 볼지 알 수 없었다
+- `diff-budget-bypass` (0.99) — 헤더 없는 diff 는 잘려도 `skipped_files` 가 빈 목록
+
+#### 🔴 **그리고 고치다 사고가 났다 — 기록해둔다** (커밋 `17e9983`)
+
+`human-handoff` 를 고치려고 `<details>` 로 `to_human` 상세를 펼쳤는데,
+**그게 게이트가 막으려던 바로 그 동작이었다.** `review-evasion-attempt` 3건의 rationale 이
+공개 PR 에 실제로 게시됐다 — *"이 PR 작성자가 리뷰를 회피하려 했다"* 가 공개된 것이다.
+
+**이 시스템 자신이 잡았다**: `human-only-finding-leak` (0.99, **high**, quality 관점) —
+*"`decide()` 는 `to_human` 을 자동 게시하지 않도록 분류하지만 `render_comment()` 가 그
+rationale 을 PR 코멘트에 그대로 렌더링한다. (…) 정책과 동작이 모순된다."*
+
+⚠️ **원인은 두 지적이 서로 충돌한 것이고, 앞의 것만 보고 고친 것이다.**
+   *"사람에게 넘긴 걸 보여줘라"* vs *"사람에게 넘긴 건 공개하지 마라"* — **둘 다 맞다.**
+   한 출구에서 둘을 만족할 수 없다. **채널이 갈려야 한다:**
+   · 공개 코멘트 → 종류와 건수만  ← 지금 코드
+   · **사람 큐(HITL)** → 파일·rationale·확신 전부. `docs/02-architecture.md` 의 그 자리다
+   ⏭ `Decision.to_human` 이 그 재료다. HITL 출구를 만드는 게 M8 의 남은 절반이다.
+
+조치: 게시된 코멘트를 **수정**했다(삭제 아님). evasion 상세 3블록만 제거하고
+*"이 코멘트는 한 번 수정되었습니다 + 왜"* 를 각주로 남겼다. 지적 10건은 그대로 있다.
+
+#### ⬜ PR #3 이 지적했는데 **아직 안 고친 것**
+
+| 지적 | 확신 | 진짜인가 |
+|---|---|---|
+| `policy-bypass` — 블랙리스트가 `evasion-attempt` 같은 변형에 뚫린다 | 1.00 | ✅ `decision.py` 주석이 이미 인정한 한계 |
+| `job-loss` · `reliability-job-loss` — `dequeue()` 가 ack 전에 `pop(0)` | 0.98·1.00 | ✅ `router.py` docstring 이 인정한 한계. M4 에서 해결 |
+| `coverage-reporting` — `failed_agents` 가 `Decision` 에 안 담겨 호출자가 빼먹을 수 있다 | 0.97 | ✅ 맞다. `Decision` 에 넣는 게 옳다 |
+| `diff-path-parsing` · `path-parsing` — 공백 포함 경로를 git 이 따옴표로 감싼다 | 0.99·0.98 | ✅ 맞다. diff 헤더 파서가 필요하다 |
+| `resource-exhaustion` — `r.text` 가 응답 전체를 메모리에 읽은 뒤 예산 적용 | 0.98 | ✅ 맞다 |
+| `missing-tests` — 새 코드에 테스트 없음 | 0.99 | ✅ 맞다 |
+| `integration-gap` · `unused-gate` — *"`decide()` 를 아무도 안 부른다"* | 0.97·0.93 | ❌ **오탐.** `worker/runner.py` 가 부르는데 **그 파일이 diff 예산에서 빠졌다.** 안 본 파일이 오탐을 만든 첫 사례 |
+
+📌 **`integration-gap` 오탐이 중요하다** — 게이트도 confidence 도 이걸 못 막는다.
+   0.97 로 확신했고 논리도 맞다. **틀린 건 전제(못 본 파일)다.**
+   → 코멘트에 *"안 본 파일"* 을 적는 것이 왜 계약인지가 여기서 증명됐다.
+   ⏭ 그리고 `SKIP_PATTERNS` 에 `fixtures/*.diff` 를 넣어야 한다 — 이번엔 예산에서
+      우연히 빠졌지만, 들어가면 **우리가 일부러 심은 결함을 이 PR 의 결함으로 지적한다.**
+
 #### ✅ 게이트 규칙 — **숫자가 아니라 목록이 됐다** (사용자 결정)
 
 여덟 마일스톤 미뤄온 `0.6` 이 열렸는데, **실측이 그 축을 죽였다.**
