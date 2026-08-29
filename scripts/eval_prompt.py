@@ -14,8 +14,24 @@
 자를 고칠 때마다 다시 부르면 그날 못 고친다.
 
 경계 ─────────────────────────────────────────────────────────────────
-안 한다: 프롬프트 변형 비교(M6-3b — `review_diff()` 가 아직 SYSTEM_PROMPT 를
-        하드코딩한다. 그 구멍은 M6-4 배선에서 뚫린다) · McNemar(같은 이유로 아직 이르다)
+한다:   관점 넷 × `tag_rule` 토글을 축으로 K판 (2026-08-28, M6-4 배선으로 구멍이 뚫렸다)
+안 한다: **McNemar 짝지은 비교** — 이건 아직 이르다. 이유가 도구가 아니라 **표본**이다:
+
+        우리 호출엔 seed 를 못 준다(프록시). 그래서 A 의 판3 과 B 의 판3 은
+        "같은 조건의 두 설정"이 아니라 그냥 다른 두 난수다 — **가짜 짝짓기**다.
+        진짜 짝의 단위는 **픽스처**인데 픽스처가 3개뿐이라 불일치 쌍이 최대 3 이고,
+        `evals/stats.py:min_two_sided_p(3) = 0.250` 이라 **어떤 결과가 나와도 유의가 안 난다.**
+
+        → **M6-3b 의 첫 걸음은 K를 올리는 게 아니라 픽스처를 늘리는 것이다.**
+          📖 책 인쇄 222 — *"기대 효과가 2~3%포인트에 불과하고 평가 세트가 수십 건이라면
+          개선 효과가 있는지 평가 자체로 알 수 없습니다. 이때 우선순위는 에이전트를 계속
+          개선하는 것이 아니라 **평가 세트를 늘리는 것**입니다."*
+          K를 3에서 30으로 올려도 픽스처가 3이면 짝은 여전히 3이다. **축이 다르다.**
+
+사용 ─────────────────────────────────────────────────────────────────
+    uv run python scripts/eval_prompt.py regrade                      # 저장된 것 전부 (공짜)
+    uv run python scripts/eval_prompt.py run sample security -k 3     # 새로 3판 (~1분)
+    uv run python scripts/eval_prompt.py run sample docs --no-tag-rule -k 3
 """
 
 import argparse
@@ -24,7 +40,7 @@ import sys
 import time
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 # scripts/ 안에서 실행하면 sys.path[0] 이 scripts/ 라 evals·backend 가 안 보인다.
 # demo_m0.py 와 같은 관례 — 레포 루트를 앞에 꽂는다.
@@ -99,17 +115,21 @@ FIXTURES_DIR = ROOT / "fixtures"
 #      하나도 못 맞추므로 grader 가 **자연스럽게 실패로 센다** — 분모 처리를 위해
 #      채점 쪽에 예외를 만들 필요가 없다. `error` 만 `findings` 키가 없다.
 # ──────────────────────────────────────────────────────────────────────
-def run_once(diff_text: str, agent_type: AgentType = "security") -> tuple[str, dict[str, Any]]:
+def run_once(
+    diff_text: str, agent_type: AgentType, *, tag_rule: bool = True, model: str = MODEL
+) -> tuple[str, dict[str, Any]]:
     """한 판 호출한다. 실패를 어떻게 분류할지가 이 함수의 전부다.
 
-    ⚠️ `agent_type` 에 기본값이 있는 건 **임시다** (2026-08-28, M6-4 1차 조각).
-       `review_diff` 는 일부러 기본값을 안 줬는데 여기서 다시 준 셈이라,
-       파일명·meta 에 관점이 안 남는다 — 옛 18판과 같은 문제다.
-       **다음 조각에서 CLI 인자로 올리고 파일명 축으로 연다** (variant 슬롯과 함께).
+    ✅ **기본값을 없앴다** (2026-08-28, M6-4 2차 조각). 하루 전엔 `agent_type="security"`
+    였고, 그건 `review_diff` 가 일부러 안 준 기본값을 여기서 다시 준 것이었다 —
+    그래서 파일명·meta 에 관점이 안 남았고, **옛 18판이 무엇을 잰 건지 파일만 보고
+    말할 수 없다.** 같은 실수를 두 번 하지 않으려고 여기서도 필수 인자로 둔다.
+
+    `tag_rule` 은 **D4 의 토글**이자 M6-3b 의 첫 실험 축이다.
     """
     started = time.monotonic()
     try:
-        findings, usage = review_diff(diff_text, agent_type)
+        findings, usage = review_diff(diff_text, agent_type, tag_rule=tag_rule, model=model)
     except RuntimeError as e:
         # base.py 가 거부를 RuntimeError 로 감싸 던진다 (output_parsed is None).
         # findings 를 빈 리스트로 남겨야 분모에 들어간다 — 위 메모 참조.
@@ -223,25 +243,35 @@ VARIANT_DEFAULT = "orig"
 
 
 def run_identity(
-    fixture: str, k: int, *, variant: str = VARIANT_DEFAULT,
-    prompt_source: str = PROMPT_SOURCE, measured_at: str | None = None,
+    fixture: str, k: int, *, agent: AgentType | None = None, variant: str = VARIANT_DEFAULT,
+    prompt_source: str = PROMPT_SOURCE, measured_at: str | None = None, model: str = MODEL,
 ) -> tuple[str, dict[str, Any]]:
     """이 실행의 파일명과 meta 를 만든다. 이름은 조건에서 계산한다 — 저장이 아니라.
 
-    인자로 열어둔 셋(`variant`·`prompt_source`·`measured_at`)은 **과거 데이터를
-    옮길 때만** 쓴다. 새 실행은 전부 기본값이다 — 지금 만들 수 있는 프롬프트가
-    하나뿐이기 때문이다(M6-4 에서 늘어난다).
+    ⚠️ **`agent` 축이 늘었다** (2026-08-28, M6-4 2차 조각). `CURRENT.md` 가 적어둔
+    구멍을 메우는 자리다 — 옛 18판은 전부 security 로 잰 건데 **파일명에도 meta 에도
+    그 사실이 없다.** 6개월 뒤 그 파일을 "넷을 잰 것"으로 읽으면 없는 사실을 만들어낸다.
+
+    `agent=None` 은 **과거 데이터 전용**이다. 새 실행은 반드시 넷 중 하나를 준다.
+    (`migrate_runs_to_evals.py` 가 옛 파일을 옮길 때 이 경로를 쓴다)
+
+    인자로 열어둔 셋(`variant`·`prompt_source`·`measured_at`)도 같은 용도다.
     """
     # 모델명의 접두부(gpt-5.6-)는 파일명에서 뺀다. 구분에 기여하지 않는다.
-    short_model = MODEL.rsplit("-", 1)[-1]
-    name = f"{fixture}__{short_model}__{variant}__k{k}.json"
-    meta = {
-        "model": MODEL,
+    short_model = model.rsplit("-", 1)[-1]
+    # ⚠️ 옛 파일(agent 없음)과 새 파일의 이름 모양이 다르다. **그게 의도다** —
+    #    두 세대를 섞어 비교하면 안 된다는 사실이 파일명에서 바로 보인다.
+    parts = [fixture, short_model] + ([agent] if agent else []) + [variant, f"k{k}"]
+    name = "__".join(parts) + ".json"
+    meta: dict[str, Any] = {
+        "model": model,
         "variant": variant,
         "prompt_source": prompt_source,
         "measured_at": measured_at or date.today().isoformat(),
         "k": k,
     }
+    if agent:
+        meta["agent"] = agent
     return name, meta
 
 
@@ -250,14 +280,18 @@ def run_identity(
 # ══════════════════════════════════════════════════════════════════════
 
 
-def do_run(fixture: str, k: int) -> Path:
+def do_run(
+    fixture: str, k: int, agent: AgentType, *, tag_rule: bool = True, model: str = MODEL
+) -> Path:
     """K판 호출해서 `evals/runs/` 에 저장한다. 채점은 안 한다."""
     diff_text = (FIXTURES_DIR / f"{fixture}.diff").read_text(encoding="utf-8")
-    name, meta = run_identity(fixture, k)
+    # variant 는 **축에서 계산한다** — 사람이 이름을 붙이면 조건과 어긋난다 (D8 과 같은 사고).
+    variant = VARIANT_DEFAULT if tag_rule else "no-tag-rule"
+    name, meta = run_identity(fixture, k, agent=agent, variant=variant, model=model)
 
     runs: list[dict[str, Any]] = []
     for i in range(1, k + 1):
-        status, payload = run_once(diff_text)
+        status, payload = run_once(diff_text, agent, tag_rule=tag_rule, model=model)
         print(f"  판{i}/{k}  {status}")
         runs.append({"status": status, **payload})
 
@@ -296,9 +330,24 @@ def _print_table(
         if errors:
             print(f"  ⚠️ 인프라 오류 {errors}판 — 전부 n 에서 빠졌다")
         return
-    x = sum(g.passed for _, g in graded)
+    # ⚠️ **거부한 판은 절대 통과가 아니다** (2026-08-28, 적대적 검증에서 드러났다).
+    #    D7 의 구현 메모는 *"`refused` 는 `findings: []` 를 남기므로 grader 가 자연스럽게
+    #    실패로 센다 — 채점 쪽에 예외를 만들 필요가 없다"* 였다. **`by:` 축이 그걸 무효로 만들었다:**
+    #    이 관점에게 요구된 항목이 0개면 `caught == []` 이고 `all([]) == True` 라
+    #    **findings 가 비어도 통과**한다. 즉 거부한 판이 ✅ 로 찍힌다.
+    #    거부는 «문제 없음»이 아니라 «확인 못 함»이다 — D7 이 정확히 그 이유로 분모에 세기로 했다.
+    x = sum(g.passed and st != "refused" for st, g in graded)
     lo, hi = wilson_ci(x, n)
     print(f"\n  {fixture}: {x}/{n} = {x / n:.2f}   Wilson 95% [{lo:.2f}, {hi:.2f}]")
+
+    # ⚠️ **이 숫자가 무엇을 잰 건지 말한다** (2026-08-28, `by:` 축을 열고 나서).
+    #    이 관점에게 요구된 must_catch 항목이 0개면 `all([]) == True` 라
+    #    **오탐만 없으면 통과**다. 숫자는 나오는데 다른 관점의 숫자와 **다른 양**이다.
+    #    조용히 같은 칸에 찍으면 6개월 뒤 "docs 가 security 보다 낫다"로 읽는다.
+    if all(g.graded_items == 0 for _, g in graded):
+        print("  ⚠️ 이 관점엔 must_catch 요구가 **하나도 없다** (expected.yaml 의 `by:`).")
+        print("     → 이 숫자는 「결함을 찾았나」가 아니라 **「지어내지 않았나」만** 잰 것이다.")
+        print("       다른 관점의 성공률과 **같은 칸에 놓고 비교하지 말 것.**")
 
     # 거부율은 따로 찍는다 — 성공률 안에 섞이면 "프롬프트를 고쳤더니 거부가 늘었다"가 안 보인다.
     refused = sum(1 for st, _ in graded if st == "refused")
@@ -327,13 +376,23 @@ def do_regrade(path: Path) -> None:
 
     # meta 전체를 찍으면 note 때문에 표를 못 읽는다. 조건만 한 줄로.
     m = data.get("meta", {})
+    # ⚠️ `agent` 를 앞에 둔다 (2026-08-28) — 관점이 다르면 **비교 자체가 성립을 안 한다.**
+    #    옛 18판엔 이 키가 없다. 없는 채로 찍히는 게 맞다 — "모른다"를 "security"로
+    #    채워 넣으면 없는 사실을 만들어내는 것이다 (`evals/runs/README.md` 의 status 와 같은 규칙).
     cond = " · ".join(
-        str(m[k]) for k in ("model", "variant", "prompt_source") if k in m
+        str(m[k]) for k in ("agent", "model", "variant", "prompt_source") if k in m
     )
+    if "agent" not in m:
+        cond = "관점 미기록 ⚠️ · " + cond
     when = ", ".join(m.get("spans", [m["measured_at"]] if "measured_at" in m else []))
     print(f"\n{path.name}")
     print(f"  {cond}")
     print(f"  측정 {when}" + (f"  ⚠️ {m['note'][:60]}…" if "note" in m else "") + "\n")
+    # ⚠️ **`agent` 가 채점에 들어간다** (2026-08-28, `by:` 축). meta 에 없으면 None 이고,
+    #    그건 "관점을 안 가린다"는 뜻이다 — 옛 데이터는 에이전트가 하나여서 넷을 다 훑었으므로
+    #    전부 요구하는 게 맞다. 새 데이터는 자기 몫만 요구받는다.
+    #    없는 값을 "security" 로 채워 넣지 않는다: **모른다와 security 는 다른 사실**이다.
+    agent = m.get("agent")
     graded: list[tuple[str, RunGrade]] = []
     errors = 0
     for r in data["runs"]:
@@ -341,7 +400,9 @@ def do_regrade(path: Path) -> None:
         if "findings" not in r:
             errors += 1
             continue
-        graded.append((r.get("status", "ok"), grade_run(fixture, r["findings"], expected)))
+        graded.append(
+            (r.get("status", "ok"), grade_run(fixture, r["findings"], expected, agent=agent))
+        )
     _print_table(fixture, graded, errors)
 
 
@@ -351,14 +412,22 @@ def main() -> None:
 
     r = sub.add_parser("run", help="K판 새로 호출한다 (비싸다)")
     r.add_argument("fixture", help="fixtures/<name>.diff 의 <name>")
+    r.add_argument("agent", choices=get_args(AgentType), help="어느 관점으로 잴 것인가")
     r.add_argument("-k", type=int, default=3, help="판 수 (기본 3)")
+    # ⚠️ 기본이 **켜짐**이다. D4 가 (c) 토글로 확정됐고, 지금 프로덕션 프롬프트가 켜진 쪽이다.
+    #    끄는 쪽을 실험하려면 명시적으로 꺼야 한다 — 기본값이 곧 베이스라인이라는 뜻.
+    r.add_argument("--no-tag-rule", action="store_true",
+                   help="D4 토글을 끈다 (variant 이름이 no-tag-rule 이 된다)")
+    # **M6-2 의 축** (📖 인쇄 198). 하네스를 고정한 채 모델만 바꾼다.
+    # 프록시 목록: gpt-5.4-mini · gpt-5.4 · gpt-5.5 · gpt-5.6-luna/sol/terra
+    r.add_argument("--model", default=MODEL, help=f"모델 교체 실험 (기본 {MODEL})")
 
     g = sub.add_parser("regrade", help="저장된 실행을 다시 채점한다 (공짜)")
     g.add_argument("path", nargs="?", help="생략하면 evals/runs/ 전부")
 
     a = p.parse_args()
     if a.mode == "run":
-        do_regrade(do_run(a.fixture, a.k))
+        do_regrade(do_run(a.fixture, a.k, a.agent, tag_rule=not a.no_tag_rule, model=a.model))
     else:
         targets = [Path(a.path)] if a.path else sorted(RUNS_DIR.glob("*.json"))
         if not targets:

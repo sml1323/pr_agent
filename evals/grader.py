@@ -20,19 +20,21 @@ M6-0b 의 Brier/ECE 는 finding 마다 "맞았다/틀렸다"가 필요하다.
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, get_args
+from typing import Any, Literal
 
 import yaml
 
-from backend.agents.schema import Finding
-
-EXPECTED_PATH = Path(__file__).resolve().parent.parent / "fixtures" / "expected.yaml"
-
-# severity 순서를 여기 복사하지 않는다 — schema.py 의 Literal 선언에서 직접 뽑는다.
+# severity 순서를 여기 복사하지 않는다 — `schema.py` 가 Literal 선언에서 뽑아둔 것을 쓴다.
 # `expected.yaml` D1-c 가 요구한 것: 같은 사실이 두 곳에 적히면 반드시 갈라진다.
 # ("critical", "high", "medium", "low", "informational") 순서 그대로.
-SEVERITY_ORDER: tuple[str, ...] = get_args(Finding.model_fields["severity"].annotation)
-SEVERITY_RANK: dict[str, int] = {s: i for i, s in enumerate(SEVERITY_ORDER)}
+#
+# ⚠️ 2026-08-28 (M6-5): 이 두 상수는 **원래 이 파일에 있었다.** `backend/agents/schema.py`
+#    로 옮긴 이유는 애그리게이터도 같은 순서가 필요한데 의존 방향이
+#    `evals/` → `backend/` 한 방향이라 backend 가 여기를 import 할 수 없어서다.
+#    자(ruler)와 애그리게이터가 **다른 순서를 쓰면** 채점과 병합이 어긋난다.
+from backend.agents.schema import SEVERITY_ORDER, SEVERITY_RANK  # noqa: F401  (재수출)
+
+EXPECTED_PATH = Path(__file__).resolve().parent.parent / "fixtures" / "expected.yaml"
 
 
 def meets_severity(actual: str, minimum: str) -> bool:
@@ -257,6 +259,86 @@ def find_violations(
     return violations
 
 
+# ──────────────────────────────────────────────────────────────────────
+# TODO(human) ③ — **누가 무엇을 찾아야 하나** (`by:` 축)
+#
+# ── 왜 이게 지금 열렸나 ────────────────────────────────────────────────
+# D1 이 2026-08-27 에 이 축을 **미뤘다**: *"지금 diff 는 13줄에 결함 2개뿐이라
+# docs·testing 이 찾을 게 0개이고, 에이전트도 아직 1개다. 버린 게 아니라 M6-4 이후로
+# 미뤘다 — 그때 `by:` 를 더해 G2 커버리지 판정에 쓴다."*
+#
+# **그 순간이 2026-08-28 에 왔고, 자가 먼저 비명을 질렀다.** 실측:
+#
+#     uv run python scripts/eval_prompt.py run sample security -k 3
+#     → 0/3.  세 판 다 `catch 1/2`
+#
+# 원인은 프롬프트가 나빠서가 아니다. `sample.must_catch` 가 sql-injection **과**
+# resource-leak 을 **둘 다** 요구하는데, `resource-leak` 은 이제 **quality 의 일**이다.
+# security 의 SOP(진입점 → 흐름 → 관문 → 노출)에 커넥션 누수가 들어갈 자리가 없다.
+# → **security 는 앞으로 영원히 0점이다.** 자가 잴 수 없는 것을 요구하고 있었다.
+#
+# ⚠️ 그리고 이건 D2 가 경고한 **바닥 효과**다: *"둘 다 전부-통과로 조이면 K판이
+#    바닥에 깔려서 M6-3b 의 McNemar 가 불일치 쌍 0 이 된다."* 0/3 이면 어떤 프롬프트
+#    후보도 이걸 못 넘고, **M6-3b 가 아무것도 못 가른다.**
+#
+# ── 후보 셋 ───────────────────────────────────────────────────────────
+#   (a) **`by:` 로 항목마다 담당을 적고, 관점별 채점은 자기 항목만 본다** ← 잠정
+#   (b) **`merged` 만 채점한다** — 관점별 점수를 아예 안 낸다
+#       ✅ 시스템이 실제로 내놓는 것을 재므로 가장 정직하다
+#       ❌ **M6-3b 가 죽는다** — 프롬프트를 관점별로 비교하려면 관점별 점수가 있어야 한다.
+#          그리고 한 판에 API 4번이라 K판 비용이 4배다
+#   (c) 픽스처를 관점별로 나눈다 (`sample_security.diff` …)
+#       ❌ 같은 코드에 대한 픽스처가 넷이 되고, 넷이 어긋나기 시작한다
+#
+# ── 고르는 기준 ───────────────────────────────────────────────────────
+#   **"이 관점이 이걸 못 찾은 게 실패인가, 애초에 자기 일이 아닌가."**
+#   그 답을 코드가 아니라 **정답지가** 갖고 있어야 한다 —
+#   📖 인쇄 211(4): *"각 평가 항목은 독립적으로 실행 가능하고 평가자의 도메인 지식에
+#   의존하지 않아야"*. `grader.py` 에 `{"resource-leak": "quality"}` 를 숨기면
+#   `expected.yaml` 만 읽어선 판정을 예측할 수 없다.
+#
+# ── ⚠️ 이 축이 **하지 않는 것** ──────────────────────────────────────
+#   `by:` 는 **`caught`(통과 판정)에만** 쓴다. 오탐 판정과 y 라벨에는 **안 쓴다.**
+#   security 가 `resource-leak` 을 찾아냈다면 그건 **맞는 말**이고 y=1 이다 —
+#   자기 일이 아닐 뿐이다. 남의 일을 했다고 "지어냈다"로 세면
+#   `_covers`/`_item_hit` 를 가른 2026-08-27 의 교훈을 되돌리는 것이다.
+#   (그때도 같은 실수였다: **하나의 축이 두 질문에 답하려 했다.**)
+#
+# ── 틀리면 뭐가 깨지나 ────────────────────────────────────────────────
+#   `by:` 를 너무 좁게 적으면: 실제로 그 관점이 찾을 수 있는 것도 안 요구하게 되고,
+#     점수가 쉬워져서 프롬프트가 나빠져도 안 보인다 (**자가 무뎌진다**)
+#   너무 넓게 적으면: 지금처럼 0점 바닥. 3b 가 아무것도 못 가른다
+#   ⚠️ 지금 `by:` 는 **관점 프롬프트를 읽고 사람이 정한 것**이지 실측이 아니다.
+#      실측(2026-08-28)은 오히려 경계가 안 갈린다고 말한다 — docs 도 sql-injection 을
+#      보고했다. **`by:` 는 "실제로 누가 찾나"가 아니라 "누가 찾아야 하나"다.**
+#      그 둘이 벌어지는 폭이 곧 M6-3b 가 좁혀야 할 거리다.
+# ──────────────────────────────────────────────────────────────────────
+def _applies_to(item: dict[str, Any], agent: str | None) -> bool:
+    """이 must_catch 항목이 이번 채점 대상인가.
+
+    `agent=None` 은 **관점을 안 가린다** — `merged` 를 채점하거나, `by:` 가 아직
+    없던 옛 데이터를 채점할 때. 그때는 모든 항목이 적용된다(옛 동작 그대로).
+    """
+    if agent is None:
+        return True
+    # ⚠️ `by:` 가 없는 항목은 **넷 다에게 요구**하는 것으로 읽는다.
+    #    "안 적혔으니 아무한테도 안 요구한다"로 읽으면 정답지에 항목을 추가하면서
+    #    `by:` 를 빠뜨렸을 때 **조용히 채점에서 빠진다** — 자가 무뎌지는 방향의 기본값이다.
+    #    빠뜨리면 시끄럽게 실패하는 쪽을 고른다 (`review_diff` 가 기본값을 안 주는 것과 같은 규칙).
+    #
+    # 🔴 **이 함수가 위 주석과 정반대로 동작했다** (2026-08-28, 적대적 검증에서 발견).
+    #    처음 구현은 `return agent in (item.get("by") or [])` 였다 —
+    #    `by:` 가 없으면 빈 리스트라 **항상 False**, 즉 **조용히 빠진다.**
+    #    바로 위 세 줄에서 "그러면 안 된다"고 써놓고 그렇게 짰다.
+    #    ⚠️ 교훈은 "실수했다"가 아니다 — **주석이 코드를 검사해주지 않는다.**
+    #       의도를 적는 것과 강제하는 것은 다른 일이고, 여기선 강제할 자리가
+    #       이 `if` 문 하나뿐이었다.
+    by = item.get("by")
+    if not by:  # 안 적혔다 = 넷 다에게 요구한다 (위 주석)
+        return True
+    return agent in by
+
+
 @dataclass
 class RunGrade:
     """한 판의 채점 결과.
@@ -270,6 +352,18 @@ class RunGrade:
     passed: bool
     caught: list[bool]  # must_catch 항목별 — 어느 항목을 놓쳤는지가 보여야 한다
     violations: list[dict[str, Any]]
+    # ⚠️ **`caught` 가 빈 리스트일 수 있다** (2026-08-28, `by:` 축을 열고 나서).
+    #    `all([]) == True` 라 그 판은 **오탐만 없으면 통과**한다. 실측:
+    #        grade_run("sample", [], exp, agent="docs")  →  passed=True
+    #        (findings 가 아예 0개인데 통과했다)
+    #    `sample` 의 must_catch 는 security·quality 것뿐이라 docs·testing 에겐
+    #    **요구가 하나도 없다.** 그게 틀린 건 아니다 — 정답지에 docs 결함이 안 적혀 있으니까.
+    #    **틀린 건 그 숫자를 다른 관점의 숫자와 같은 칸에 찍는 것이다:**
+    #        security 의 2/3 = "결함을 찾았고 지어내지 않았다"
+    #        docs 의    3/3 = "지어내지 않았다"        ← **다른 양이다**
+    #    → 표가 그걸 말해야 한다. 이 필드가 그 재료다.
+    #    ⚠️ `passed` 를 False 로 바꾸지 않는다. 요구가 없는데 벌하는 건 더 틀렸다.
+    graded_items: int = 0  # 이 관점에게 실제로 요구된 must_catch 항목 수
     labels: list[tuple[float, Literal[0, 1, -1]]] = field(default_factory=list)
     # (confidence, y). y=1 정탐 · y=0 오탐 · y=-1 판정 보류.
     # ⚠️ -1 이 존재하는지는 TODO(human) ② 가 정한다 — 화이트리스트면 -1 이 안 생긴다.
@@ -280,6 +374,7 @@ class RunGrade:
         miss = self.caught.count(False)
         return (
             f"{mark} {self.fixture}: caught {sum(self.caught)}/{len(self.caught)}"
+            + (" ⚠️ 요구 없음" if not self.caught else "")
             + (f" · 놓침 {miss}" if miss else "")
             + (f" · 오탐 {len(self.violations)}" if self.violations else "")
         )
@@ -295,8 +390,13 @@ def grade_run(
     fixture: str,
     findings: list[dict[str, Any]],
     expected: dict[str, Any] | None = None,
+    agent: str | None = None,
 ) -> RunGrade:
     """한 판을 채점한다.
+
+    Args:
+        agent: 이 판을 낸 관점. 주면 `by:` 로 **그 관점이 책임지는 항목만** 요구한다.
+            `None` 이면 전부 요구한다 — `merged` 채점과 옛 데이터가 그 경로다.
 
     D2 결정이 여기 코드가 된다:
       · `must_not_appear` 는 **거부권** — 하나라도 걸리면 그 판은 실패
@@ -308,7 +408,12 @@ def grade_run(
     exp = (expected or load_expected())[fixture]
     must_catch = exp["must_catch"] or []
 
-    caught = [any(_item_hit(item, f) for f in findings) for item in must_catch]
+    # ⚠️ `caught` 는 **이 관점이 책임지는 항목만** 센다 (TODO ③ · `by:` 축).
+    #    아래 `violations` 와 `labels` 는 **전체 must_catch** 를 본다 — 축이 다르다.
+    #    security 가 resource-leak 을 찾았으면 그건 맞는 말이고(y=1) 오탐이 아니다.
+    #    자기 일이 아닐 뿐이다.
+    my_items = [item for item in must_catch if _applies_to(item, agent)]
+    caught = [any(_item_hit(item, f) for f in findings) for item in my_items]
     violations = find_violations(findings, exp)
 
     labels: list[tuple[float, Literal[0, 1, -1]]] = []
@@ -329,4 +434,5 @@ def grade_run(
         caught=caught,
         violations=violations,
         labels=labels,
+        graded_items=len(my_items),
     )
