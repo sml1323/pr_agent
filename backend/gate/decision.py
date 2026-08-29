@@ -222,12 +222,33 @@ def render_comment(
             ]
 
     if d.to_human:
+        # ⚠️ **이 블록이 리뷰에서 지적받아 고쳐졌다** (2026-08-30, PR #3 자기 리뷰).
+        #    ① `misleading-documentation` (conf 1.00, docs 관점) —
+        #       원래 "확신이 낮거나 심각도가 높아"라고 적혀 있었는데 `decide()` 는
+        #       confidence·severity 를 **전혀 안 본다.** 게이트가 category 기반으로 바뀔 때
+        #       문구만 남아 **코멘트가 거짓말하고 있었다.**
+        #    ② `human-handoff` (conf 0.96) · `human-review-visibility` (conf 0.93) —
+        #       건수만 적어서 **사람이 무엇을 확인해야 하는지 알 수 없었다.**
+        #       "사람에게 넘긴다"가 실질적인 검토로 이어지지 않는다.
+        cats = sorted({normalize_category(f["category"]) for f in d.to_human})
         lines += [
             "---",
-            f"🙋 **사람 확인 대기 {len(d.to_human)}건** — 확신이 낮거나 심각도가 높아 "
-            "자동 게시하지 않았습니다.",
+            f"🙋 **사람 확인 대기 {len(d.to_human)}건** — "
+            f"`{'`, `'.join(cats)}` 는 오탐일 때의 피해가 커서 자동 게시하지 않습니다. "
+            f"(확신·심각도로 거르지 않습니다.)",
             "",
         ]
+        for f in sorted(d.to_human, key=lambda x: SEVERITY_RANK[x["severity"]]):
+            srcs = ", ".join(f.get("sources", []))
+            lines += [
+                f"<details><summary>🙋 <code>{f['severity']}</code> · "
+                f"{f['category']} — {f['file']} (확신 {f['confidence']:.2f} · {srcs})</summary>",
+                "",
+                f["rationale"],
+                "",
+                "</details>",
+                "",
+            ]
 
     notes = []
     if failed_agents:

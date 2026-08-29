@@ -242,7 +242,15 @@ def pick_reviewable_slice(
     """
     files = split_diff_by_file(diff)
     if not files:
-        return diff[:budget], []
+        # ⚠️ **리뷰에서 지적받아 고쳤다** (2026-08-30, PR #3 — `diff-budget-bypass`, conf 0.99):
+        #    *"`diff --git` 헤더가 하나도 없으면 `diff[:budget]` 만 반환하면서
+        #      `skipped_files` 는 빈 목록으로 반환한다. 예산을 초과한 내용이 잘렸는데도
+        #      호출자는 **모든 파일을 리뷰한 것으로 오인**할 수 있다."*
+        #    이 함수 docstring 이 *"빠진 파일을 돌려주는 게 계약의 절반"* 이라고 적어놓고
+        #    이 분기에서만 그 계약을 안 지키고 있었다.
+        if len(diff) > budget:
+            return diff[:budget], ["<파일 헤더 없는 diff — 예산을 넘어 잘렸다>"]
+        return diff, []
 
     kept: list[str] = []
     skipped: list[str] = []
