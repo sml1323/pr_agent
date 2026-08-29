@@ -30,6 +30,85 @@ load_dotenv()
 MODEL = "gpt-5.6-luna"
 
 
+# ─────────────────────────────────────────────────────────────────────
+# TODO(human) ⑥ (계속) — 호출의 마감. **여기가 그 값이 사는 자리다** (2026-08-28, M6-4)
+#
+# `langgraph_engine.py` 의 TODO ⑥ 에서 "누가 소유하나"를 (B) 로 정했고, 그 (B) 가 여기다.
+# 남은 건 **숫자 둘**이다.
+#
+# ── 관측 ────────────────────────────────────────────────────────────
+#   n=12 (2026-08-25, security 한 관점):  min 10.09 · median 16.84 · max 41.40
+#   n=4  (2026-08-28, 관점 넷 각 1판):    9.8 · 12.8 · 13.1 · 13.5
+#   ⚠️ **p95 를 못 잰다** (📖 인쇄 217). n=3 일 때 최대 24.35 였는데 n=12 에서
+#      41.40 으로 뛰었다 — 꼬리를 아직 못 봤고, 지금 고르는 값도 **잠정치**다.
+#   ⚠️ 그리고 이건 **프록시** 지연이다. 진짜 API 로 되돌리면 분포가 통째로 바뀐다.
+#
+# ── ⚠️ 잠정 = 90초 · 재시도 1회. 네가 뒤집을 자리다 ─────────────────
+#   **90 의 근거**: 관측 최대(41.4)의 두 배 조금 넘는다. "두 배"에 이론적 근거는 없고,
+#   꼬리를 못 봤다는 사실에 대한 **여유**다. 짧게 잡을 때의 대가가 비대칭이라 넉넉히 뒀다 —
+#   너무 짧으면 멀쩡한 응답을 끊고 `failed_agents` 에 이름을 올리는데, 게이트(M8)는
+#   그걸 **"저 관점은 아무도 안 봤다"** 로 읽는다. 사실은 봤는데 우리가 끊은 것이다.
+#   그건 이 프로젝트 최악의 시나리오(G2)와 같은 모양이다.
+#
+#   **재시도 1 의 근거**: SDK 기본이 **2** 다 (`openai/_constants.py:DEFAULT_MAX_RETRIES`).
+#   그대로 두면 최악 대기가 `90 × 3 + 백오프` = **5분에 가깝다.** 노드 넷이 병렬이라
+#   리뷰 한 건의 최대 지연이 그대로 그 값이 된다.
+#   ⚠️ **재시도는 INV-2 를 다시 연다** — 타임아웃은 취소가 아니다 (Lesson 10).
+#      우리가 기다리기를 그만두는 것뿐이고 저쪽 서버는 첫 요청을 계속 처리 중이다.
+#      **같은 diff 를 두 번 리뷰하는 셈**이고, 한도도 두 번 쓴다.
+#      지금 그게 안전한 이유는 **리뷰가 읽기 전용이라서**다 — 부작용이 없다.
+#      ⬜ M8 에서 GitHub 게시가 붙으면 그 전제가 죽는다. 그때 이 값을 다시 본다.
+#
+# ── 후보 ────────────────────────────────────────────────────────────
+#   시간:   (i) 45초 — 관측 최대에 붙인다. 꼬리를 만나면 거짓 실패가 난다
+#           (ii) 90초 ← 잠정
+#           (iii) 관측이 쌓이면 p95 × 여유 — **K판 데이터가 이미 `evals/runs/` 에 쌓인다**
+#                 (`_usage_dict` 옆의 `elapsed`). 그걸로 다시 정하는 게 원래 계획이다
+#   재시도: (i) 0 — INV-2 를 완전히 닫는다. 대신 일시적 장애에 그 관점이 통째로 빈다
+#           (ii) 1 ← 잠정
+#           (iii) 2 (SDK 기본) — 최악 5분
+#
+# ── 틀리면 뭐가 깨지나 ──────────────────────────────────────────────
+#   짧으면: 멀쩡한 관점이 `failed_agents` 에 올라가고 게이트가 커버리지를 잘못 읽는다 (G2)
+#   길면:   웹훅 → 큐 → 워커의 전체 지연이 늘어난다. GitHub 응답 제한(10초)과는 무관하다
+#           (큐가 그걸 막는 게 존재 이유다) — 사람이 기다리는 시간이 늘 뿐이다
+#   재시도 많으면: 한도를 태우고, 같은 리뷰가 여러 번 돈다
+#
+# 🔴 **잠정 (B) 의 전제가 깨졌다 — `timeout=90` 은 전체 대기의 상한이 아니다** (2026-08-28)
+#
+#    `OpenAI(timeout=90.0)` 은 httpx 에 **connect / read / write 각각 90초**로 들어간다.
+#    `httpx.Timeout` 의 필드를 직접 확인하면 `['as_dict','connect','pool','read','write']` —
+#    **`total` 이 없다.** `read` 는 *"한 번의 읽기"* 마감이라 서버가 조금씩 흘려보내면
+#    **매번 갱신된다.** 목 서버로 실측: 마감 2.0초로 선언했는데 **77.5초** 매달렸다.
+#    그리고 `max_retries=1` 이 그걸 **곱한다** (실측: 9.1초 → 18.1초).
+#
+#    ⚠️ **이게 `langgraph_engine.py` TODO ⑥ 이 (C)를 안 고른 근거를 정확히 깬다.**
+#       거기 이렇게 적혀 있다: *"(C) 를 안 고른 이유는 바깥 마감을 재려면 스레드나
+#       시그널이 필요한데 그 복잡도를 정당화할 관측이 아직 없다 —
+#       **SDK 마감이 안 먹히는 걸 본 적이 없다.**"*  이제 봤다.
+#
+#    ⚠️ **정직하게 깎을 것 둘** (검증자가 스스로 깎았다):
+#      · "38배"는 파라미터의 산물이다. 실제 값 90초로는 같은 응답이 다 들어와 **안 걸린다.**
+#        **전형적 최악은 `90 × 2 + 백오프 ≈ 3분/에이전트`** 이고, 무한은 병리적 상대에서만.
+#      · 그 병리적 상대는 **공격자 통제 입력이 아니다** — 열화·오작동하는 릴레이가 필요하다.
+#        지금 호출부는 사람이 직접 돌리는 데모뿐이라 Ctrl-C 가 된다.
+#        **피해는 M4(워커) 에 예약된 것이지 오늘의 것이 아니다.**
+#
+#    ⚠️ 그리고 **회귀 그물이 다른 코드를 재고 있다.** `demo_m5` 판정 ③(hang → 타임아웃)은
+#       `M5_DUMMY_AGENTS=all` 이라 **진짜 `review_diff` 를 0번 부른다**(검증자 실측).
+#       hang 주입 자체가 더미 분기에서만 가능하다 — 그물이 걸린 곳과 매달릴 수 있는 곳이 다르다.
+#
+#    ⏭ **그래서 후보 (C)(둘 다)의 값이 올라갔다.** 바깥 마감을 어디에 두나:
+#       · `graph.compile(...)` 이 아니라 **`invoke(config={"step_timeout": ...})`**
+#         — LangGraph 가 superstep 마감을 지원하는지 먼저 정찰할 것 (`/recon`)
+#       · 노드 안에서 `concurrent.futures` 로 감싸 `future.result(timeout=)`
+#       · `httpx.Timeout` 대신 총량을 재는 커스텀 트랜스포트
+#       **이건 판단이고 코드도 는다 — 네가 고를 자리다.** M4 워커 배선 직전이 그 시점.
+# ─────────────────────────────────────────────────────────────────────
+REQUEST_TIMEOUT_SECONDS: float = 90.0
+MAX_RETRIES: int = 1
+
+
 # ⚠️ **SYSTEM_PROMPT 상수가 여기 있었다. 지웠다** (2026-08-28, M6-4 배선).
 #
 #    M0 에서 한 덩어리 문자열이었고, M6-3a 에서 `backend/prompts/review.py` 로 옮겨
@@ -90,7 +169,7 @@ def _refusal_text(response: object) -> str:
 # `eval_prompt.py:192` 가 "변형을 넣을 구멍이 없다"고 적어둔 그 구멍이 여기였다.
 # ⚠️ 아직 `eval_prompt.py` 가 이 인자를 안 넘긴다 — variant 슬롯 배선은 다음 조각.
 def review_diff(
-    diff_text: str, agent_type: AgentType, tag_rule: bool = True
+    diff_text: str, agent_type: AgentType, tag_rule: bool = True, model: str = MODEL
 ) -> tuple[list[SourcedFinding], ResponseUsage | None]:
     """diff 하나 → 출처가 붙은 finding 목록. (finding 들, 토큰 사용량) 을 돌려준다.
 
@@ -107,7 +186,7 @@ def review_diff(
     # base_url 은 OPENAI_BASE_URL 환경변수에서 SDK 가 알아서 읽는다.
     # 로컬 OAuth 프록시를 쓰는 동안엔 .env 가 거기를 가리키고, 진짜 API 로
     # 되돌리려면 .env 의 그 줄만 지우면 된다. 코드는 어느 쪽인지 몰라도 된다.
-    client = OpenAI()
+    client = OpenAI(timeout=REQUEST_TIMEOUT_SECONDS, max_retries=MAX_RETRIES)
 
     # Chat Completions 가 아니라 Responses 를 쓰는 이유는 취향이 아니다.
     # 로컬 프록시의 /v1/chat/completions 는 response_format 을 조용히 무시하고
@@ -117,14 +196,42 @@ def review_diff(
     #    ⚠️ `tag_rule=` 로 이름을 대는 이유: 저쪽 시그니처가 `*` 로 키워드 전용을 강제한다.
     system_prompt = build_review_system_prompt(agent_type, tag_rule=tag_rule)
 
+    # ⚠️ `model` 이 인자가 됐다 (2026-08-28, **M6-2** 모델 교체 실험).
+    #    📖 책 인쇄 198 — *"'모델 역량 부족'과 '하네스 설계 결함'을 구분하는 일반적인 방법은
+    #       **모델 교체 실험**입니다. **하네스를 고정한 채** 더 강하거나 약한 모델로 바꾸고
+    #       점수가 얼마나 움직이는지 관찰합니다. **더 강한 모델로도 점수가 오르지 않으면
+    #       병목은 하네스입니다.**"*
+    #    기본값이 `MODEL` 이라 부르는 쪽은 안 고쳐도 된다 — 실험만 명시적으로 넘긴다.
     response = client.responses.parse(
-        model=MODEL,
+        model=model,
         input=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": build_user_message(diff_text)},
         ],
         text_format=ReviewResult,
     )
+
+    # ⚠️ **잘림을 먼저 본다** (2026-08-28, `PLAN.md` G-M0-2 를 메운다).
+    #
+    #    G-M0-2 는 M0 에서 관측됐고 *"어디서 메우나 = **M6**"* 로 배정돼 있었다:
+    #    *"`finish_reason` 미체크. `length` 로 잘려도 `parsed` 가 채워져 통과.
+    #     **잘린 rationale 이 완료 판정 ②를 PASS 로 통과한 사례 있음.**"*
+    #
+    #    Responses API 에서는 `finish_reason` 이 아니라 이 둘이다 (openai 2.49.0 확인):
+    #        response.status              'completed' | 'incomplete' | 'failed' | …
+    #        response.incomplete_details.reason   'max_output_tokens' | 'content_filter'
+    #
+    #    ⚠️ **`output_parsed` 검사보다 먼저** 와야 한다. 잘려도 파싱이 성공할 수 있고
+    #       (구조가 우연히 닫히면), 그럼 **잘린 rationale 이 조용히 흘러간다.**
+    #       그게 INV-3 을 형식적으로만 통과시키는 경로다 — 필드는 있는데 내용이 반쪽이다.
+    #
+    #    ⚠️ 거부와 **다른 예외로 안 나눈다.** `eval_prompt.py` 의 D7 은 `RuntimeError` 를
+    #       `refused` 로 세는데, 잘림도 *"확인을 못 했다"* 라서 같은 통이 맞다.
+    #       ⬜ 둘을 갈라야 할 이유가 생기면(예: 잘림률이 따로 봐야 할 숫자가 되면)
+    #          그때 예외 타입을 나눈다 — 지금은 이유가 없다.
+    if response.status == "incomplete":
+        why = getattr(response.incomplete_details, "reason", None) or "이유 없음"
+        raise RuntimeError(f"모델 응답이 잘렸다 (status=incomplete, reason={why})")
 
     # 모델이 거부하면 output_parsed 가 None 이다.
     # 여기서 빈 결과를 조용히 돌려주면 "문제가 없어서 비었다"와 구별이 안 된다.
