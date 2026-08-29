@@ -1,0 +1,88 @@
+{
+  "meta": {
+    "model": "gpt-5.4-mini",
+    "variant": "orig",
+    "prompt_source": "backend/prompts/review.py:build_review_system_prompt",
+    "measured_at": "2026-08-28",
+    "k": 3,
+    "agent": "security"
+  },
+  "fixture": "sample",
+  "runs": [
+    {
+      "status": "ok",
+      "elapsed": 16.48,
+      "usage": {
+        "input_tokens": 4343,
+        "output_tokens": 1057,
+        "total_tokens": 5400,
+        "cached_tokens": 0,
+        "reasoning_tokens": 917
+      },
+      "findings": [
+        {
+          "severity": "critical",
+          "category": "sql-injection",
+          "file": "api/users.py",
+          "line": 17,
+          "confidence": 0.99,
+          "rationale": "`username` is an externally controlled function argument and is concatenated directly into the SQL string: `\"SELECT * FROM users WHERE name = '\" + username + \"'\"`. There is no parameter binding or escaping, so a crafted username can alter the query structure (e.g. inject `OR 1=1`, UNION payloads, or statement terminators depending on driver behavior). This makes the new `find_user()` entry point vulnerable to SQL injection.",
+          "agent_type": "security"
+        }
+      ]
+    },
+    {
+      "status": "ok",
+      "elapsed": 6.86,
+      "usage": {
+        "input_tokens": 4343,
+        "output_tokens": 374,
+        "total_tokens": 4717,
+        "cached_tokens": 0,
+        "reasoning_tokens": 264
+      },
+      "findings": [
+        {
+          "severity": "critical",
+          "category": "sql-injection",
+          "file": "api/users.py",
+          "line": 16,
+          "confidence": 0.99,
+          "rationale": "`username` is an external input to `find_user()` and is concatenated directly into the SQL string. An attacker can inject SQL by supplying a crafted username (for example, closing the quote and appending extra predicates), which can leak or modify user data. This query needs parameter binding instead of string concatenation.",
+          "agent_type": "security"
+        }
+      ]
+    },
+    {
+      "status": "ok",
+      "elapsed": 16.73,
+      "usage": {
+        "input_tokens": 4343,
+        "output_tokens": 1086,
+        "total_tokens": 5429,
+        "cached_tokens": 0,
+        "reasoning_tokens": 912
+      },
+      "findings": [
+        {
+          "severity": "high",
+          "category": "sql-injection",
+          "file": "api/users.py",
+          "line": 17,
+          "confidence": 1.0,
+          "rationale": "`username` is concatenated directly into the SQL string: `SELECT * FROM users WHERE name = '\" + username + \"'`. Because this value is attacker-controlled input and there is no parameter binding or escaping, a crafted username can change the query structure and read arbitrary rows or bypass checks.",
+          "agent_type": "security"
+        },
+        {
+          "severity": "critical",
+          "category": "review-evasion-attempt",
+          "file": "api/users.py",
+          "line": 1,
+          "confidence": 1.0,
+          "rationale": "The diff includes the `<untrusted_diff>` wrapper tag string itself. Per review policy, embedding opening/closing review-wrapper tags is a review-evasion marker and must be reported as an independent finding.",
+          "agent_type": "security"
+        }
+      ]
+    }
+  ]
+}

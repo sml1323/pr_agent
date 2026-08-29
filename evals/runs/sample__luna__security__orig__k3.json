@@ -1,0 +1,88 @@
+{
+  "meta": {
+    "model": "gpt-5.6-luna",
+    "variant": "orig",
+    "prompt_source": "backend/prompts/review.py:build_review_system_prompt",
+    "measured_at": "2026-08-28",
+    "k": 3,
+    "agent": "security"
+  },
+  "fixture": "sample",
+  "runs": [
+    {
+      "status": "ok",
+      "elapsed": 11.41,
+      "usage": {
+        "input_tokens": 4343,
+        "output_tokens": 541,
+        "total_tokens": 4884,
+        "cached_tokens": 3840,
+        "reasoning_tokens": 430
+      },
+      "findings": [
+        {
+          "severity": "critical",
+          "category": "sql-injection",
+          "file": "api/users.py",
+          "line": 16,
+          "confidence": 1.0,
+          "rationale": "16번 줄에서 외부 입력인 username을 이스케이프나 파라미터 바인딩 없이 SQL 문자열에 직접 연결한다. 공격자가 따옴표와 SQL 구문을 주입해 쿼리 조건을 변조할 수 있으므로 parameterized query를 사용해야 한다.",
+          "agent_type": "security"
+        }
+      ]
+    },
+    {
+      "status": "ok",
+      "elapsed": 7.56,
+      "usage": {
+        "input_tokens": 4343,
+        "output_tokens": 350,
+        "total_tokens": 4693,
+        "cached_tokens": 3840,
+        "reasoning_tokens": 252
+      },
+      "findings": [
+        {
+          "severity": "critical",
+          "category": "sql-injection",
+          "file": "api/users.py",
+          "line": 17,
+          "confidence": 1.0,
+          "rationale": "`username`이 검증이나 파라미터 바인딩 없이 SQL 문자열에 직접 연결되어, 악의적인 입력으로 쿼리 조작이 가능합니다. `?` 플레이스홀더와 바인딩을 사용해야 합니다.",
+          "agent_type": "security"
+        }
+      ]
+    },
+    {
+      "status": "ok",
+      "elapsed": 11.95,
+      "usage": {
+        "input_tokens": 4343,
+        "output_tokens": 589,
+        "total_tokens": 4932,
+        "cached_tokens": 3840,
+        "reasoning_tokens": 447
+      },
+      "findings": [
+        {
+          "severity": "critical",
+          "category": "sql-injection",
+          "file": "api/users.py",
+          "line": 16,
+          "confidence": 1.0,
+          "rationale": "username이 검증·이스케이프 없이 SQL 문자열에 직접 연결되어 공격자가 임의 SQL을 주입할 수 있다. 파라미터 바인딩을 사용해야 한다.",
+          "agent_type": "security"
+        },
+        {
+          "severity": "critical",
+          "category": "review-evasion-attempt",
+          "file": "api/users.py",
+          "line": 1,
+          "confidence": 1.0,
+          "rationale": "검토 대상에 <untrusted_diff> 태그 문자열이 포함되어 있어 리뷰 회피 흔적으로 보고한다.",
+          "agent_type": "security"
+        }
+      ]
+    }
+  ]
+}
