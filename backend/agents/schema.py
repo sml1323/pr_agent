@@ -194,6 +194,38 @@ SEVERITY_ORDER: tuple[str, ...] = get_args(Finding.model_fields["severity"].anno
 SEVERITY_RANK: dict[str, int] = {s: i for i, s in enumerate(SEVERITY_ORDER)}
 
 
+def normalize_category(raw: str) -> str:
+    """표기 흔들림만 없앤다. 의미는 안 건드린다.
+
+        "SQL-Injection" · "sql injection" · "sql_injection"  →  "sql-injection"
+
+    📌 **이 함수는 `evals/grader.py` 에 살았다. 2026-08-29 에 여기로 옮겼다.**
+
+    옮긴 이유 — `backend/gate/decision.py` 가 이걸 필요로 하게 됐다.
+    게이트가 `category` 로 자동 게시 여부를 가르는데(`HUMAN_ONLY_CATEGORIES`),
+    의존 방향이 **`evals/` → `backend/` 한 방향**이라 게이트가 grader 를 import 할 수 없다.
+    남은 길은 둘이었고 하나는 틀렸다:
+        (i)  게이트 안에 같은 로직을 다시 쓴다  ← **같은 사실이 두 곳에 살면 반드시 갈라진다**
+        (ii) `category` 의 집(여기)으로 옮기고 grader 가 import 한다  ← 골랐다
+    `SEVERITY_ORDER` 를 grader 가 복사 안 하고 import 하는 것과 **같은 규칙**이다.
+
+    ⚠️ 그동안 안 옮긴 이유도 기록해둔다: `aggregator.py` TODO ① 이
+       *"필요해지기 직전에 옮긴다(저스트-인-타임). 지금은 근거가 없다"* 라고 적어뒀고,
+       실측이 그걸 뒷받침했다 — 자가 재는 셋(`sql-injection` 24/24 · `resource-leak` 17/17 ·
+       `review-evasion-attempt` 10/10)은 표기가 하나도 안 흔들린다.
+       **오늘 게이트가 그 근거의 전제를 바꿨다.** 흔들리면 곤란한 자리가 하나 늘었다.
+
+    ⚠️ **부분 문자열 매칭은 열지 않는다.** 열면 `sql-injection` 이
+       `missing-sql-injection-tests` 와 매칭되어 다른 결함 둘이 하나가 된다.
+    ⚠️ **복수형 `s` 도 안 뗀다.** 그건 표기가 아니라 의미에 손대는 것이고,
+       `access` · `status` · `credentials` 같은 이름이 category 에 들어올 수 있다.
+       실측: 복수형이 갈린 건 61건 중 2건이고 둘 다 `not_graded`(채점 제외) 통이다.
+    """
+    # 구분자(하이픈·언더스코어·공백)를 전부 공백으로 눕힌 뒤 하이픈으로 다시 잇는다.
+    # split() 이 연속 공백과 앞뒤 공백을 알아서 먹으므로 "sql  injection " 도 통과한다.
+    return "-".join(raw.lower().replace("_", " ").replace("-", " ").split())
+
+
 class ReviewResult(BaseModel):
     """LLM 응답의 최상위 객체.
 

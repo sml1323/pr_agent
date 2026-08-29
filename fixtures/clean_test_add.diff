@@ -1,0 +1,21 @@
+diff --git a/tests/test_orders.py b/tests/test_orders.py
+index 7b3c2a1..9f8e4d2 100644
+--- a/tests/test_orders.py
++++ b/tests/test_orders.py
+@@ -8,3 +8,17 @@ def test_calculate_total_single_item():
+ 
+ def test_calculate_total_empty():
+     assert calculate_total([]) == 0
++
++
++def test_calculate_total_multiple_items():
++    items = [
++        {"price": 100, "qty": 2},
++        {"price": 50, "qty": 1},
++    ]
++    assert calculate_total(items) == 275
++
++
++def test_calculate_total_zero_qty():
++    items = [{"price": 100, "qty": 0}]
++    assert calculate_total(items) == 0

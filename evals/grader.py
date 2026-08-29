@@ -32,7 +32,11 @@ import yaml
 #    로 옮긴 이유는 애그리게이터도 같은 순서가 필요한데 의존 방향이
 #    `evals/` → `backend/` 한 방향이라 backend 가 여기를 import 할 수 없어서다.
 #    자(ruler)와 애그리게이터가 **다른 순서를 쓰면** 채점과 병합이 어긋난다.
-from backend.agents.schema import SEVERITY_ORDER, SEVERITY_RANK  # noqa: F401  (재수출)
+from backend.agents.schema import (  # noqa: F401  (재수출)
+    SEVERITY_ORDER,
+    SEVERITY_RANK,
+    normalize_category,
+)
 
 EXPECTED_PATH = Path(__file__).resolve().parent.parent / "fixtures" / "expected.yaml"
 
@@ -95,14 +99,11 @@ def meets_severity(actual: str, minimum: str) -> bool:
 #       `"missing-sql-injection-tests"` 가 같이 걸린다. 그건 테스트 지적이지 인젝션 지적이 아니고,
 #       y=1 라벨이 오염되면 M6-0b 의 Brier 가 통째로 무의미해진다.
 # ──────────────────────────────────────────────────────────────────────
-def normalize_category(raw: str) -> str:
-    """표기 흔들림만 없앤다. 의미는 안 건드린다.
-
-        "SQL-Injection" · "sql injection" · "sql_injection"  →  "sql-injection"
-    """
-    # 구분자(하이픈·언더스코어·공백)를 전부 공백으로 눕힌 뒤 하이픈으로 다시 잇는다.
-    # split() 이 연속 공백과 앞뒤 공백을 알아서 먹으므로 "sql  injection " 도 통과한다.
-    return "-".join(raw.lower().replace("_", " ").replace("-", " ").split())
+# ⚠️ **`normalize_category` 가 여기 있었다. 2026-08-29 에 `schema.py` 로 옮겼다.**
+#    `backend/gate/decision.py` 가 이걸 필요로 하는데 의존 방향이 `evals/` → `backend/`
+#    한 방향이라 저쪽이 여기를 import 할 수 없다. `SEVERITY_ORDER` 와 같은 처지가 됐고,
+#    같은 답을 골랐다 — **집은 `category` 가 정의된 곳이고, 쓰는 쪽이 가져다 쓴다.**
+#    (위 import 줄에서 재수출한다. 이 파일을 import 하던 코드는 안 고쳐도 된다.)
 
 
 def category_matches(expected: str, actual: str) -> bool:

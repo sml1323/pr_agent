@@ -1,0 +1,16 @@
+diff --git a/api/files.py b/api/files.py
+index 4b8e2c1..7d3a5f9 100644
+--- a/api/files.py
++++ b/api/files.py
+@@ -3,6 +3,13 @@ from pathlib import Path
+ UPLOAD_ROOT = Path("/srv/uploads")
+ 
+ 
++def read_upload(filename):
++    target = UPLOAD_ROOT / filename
++    with open(target, "rb") as f:
++        return f.read()
++
++
+ def list_uploads():
+     return [p.name for p in UPLOAD_ROOT.iterdir() if p.is_file()]

@@ -3,7 +3,8 @@
 > 새 세션이 콜드 스타트할 때 **가장 먼저 읽는 파일.**
 > "지금 뭐가 진짜로 살아있고, 뭐가 스텁이고, 다음 한 걸음이 뭔가"만 적는다. 설계는 여기 안 적는다.
 
-**마지막 갱신**: 2026-08-28 · **M6-4·5·6 완료 — 진짜 LLM 넷이 돌고 애그리게이터가 합친다. `demo_m6` 전부 PASS. 남은 건 M6-3b(픽스처 추가부터)와 M6-2**
+**마지막 갱신**: 2026-08-29 · **end-to-end 가 이어졌다 — 진짜 PR 하나가 웹훅부터 코멘트까지 82.4초에 흐른다.**
+**다음 한 걸음: 프롬프트에 `category` 목록을 준다 (`other` 탈출구 포함).** 실전 PR 이 픽스처가 못 본 실패 모드를 터뜨렸다 — 아래 §0.
 
 ---
 
@@ -511,7 +512,155 @@ M6-PLAN 은 *"critical 판과 high 판이 무엇을 다르게 봤는지가 그 �
 
 ## 다음 한 걸음
 
-### 0. **학습 진입점 — M6 에서 비워둔 판단 자리 여덟** ← **지금 여기** (2026-08-28)
+### 0. **`category` 를 프롬프트에서 조인다** ← **지금 여기** (2026-08-29)
+
+**목표가 바뀌었다** (사용자, 2026-08-29): 오늘 안에 **포폴**을 만든다. M6 에서 끝내고
+DB 는 안 붙인다. 그래서 M8 게이트 일부와 워커를 **범위를 넘어 당겨왔다** (아래 §0-a).
+
+#### 왜 이게 다음인가 — 실전 PR 이 픽스처가 못 본 걸 터뜨렸다
+
+`uv run python scripts/demo_e2e.py 2` 첫 실행(2026-08-29, 82.4초)에서:
+
+```
+📢 checkpoint-path-instability    (security)  ┐
+📢 checkpoint-path-stability      (testing)   │  넷이 **똑같은 결함**을
+📢 checkpoint-persistence         (quality)   │  각자 다른 이름으로 불렀다
+📢 unstable-storage-path          (docs)      ┘
+```
+
+rationale 이 넷 다 같은 말이다 — *"`checkpoints.sqlite` 가 상대 경로라 워커 cwd 가 바뀌면
+다른 DB 를 연다."* **하나의 결함인데 코멘트에 4번 나온다**
+(`missing-checkpoint-persistence-test` 까지 치면 5번).
+
+⚠️ **`normalize_category` 로는 못 고친다.** 철자 변형이 아니라 **완전히 다른 이름**이다.
+⚠️ **픽스처 3개에서는 원리적으로 안 나오던 문제다.** `sample.diff` 는 13줄에 결함 2개라
+   부를 이름이 뻔했다(`sql-injection`·`resource-leak`). 실제 PR 은 결함이 미묘해서
+   **부를 이름이 여러 개**다. "픽스처가 부족하다"는 게 통계 표본만의 얘기가 아니었다 —
+   **실패 모드 자체를 못 보고 있었다.**
+
+#### 무엇을 하나 (사용자 결정, 2026-08-29)
+
+`backend/prompts/review.py` 가 지금 category 를 **예시 셋**으로만 준다
+(`schema.py:category` description — *"분류 태그. 예: sql-injection, resource-leak, missing-docstring"*).
+→ **미리 정한 목록을 주고 그중에서 고르게 한다. 상정 못 한 것은 `other`.**
+
+⚠️ **`other` 탈출구가 결정의 절반이다.** 목록만 주면 모델이 처음 보는 결함을 **억지로
+   목록 안에서 고른다.** 그러면 `expected.yaml` 이 화이트리스트로 얻은 이득
+   (새 category 가 나오면 자가 빨간불 → 사람이 통에 넣는다, D2++)이 통째로 죽는다.
+   `other` 가 그 신호를 살려두는 자리다.
+
+#### 순서
+
+```
+1. 목록을 정한다           지금 관측된 8종 + 실전에서 나온 것들. `other` 포함
+2. 프롬프트/스키마 반영     backend/prompts/review.py · backend/agents/schema.py
+3. before/after 를 잰다     uv run python scripts/eval_prompt.py regrade     (공짜)
+                           uv run python scripts/demo_e2e.py 2               (API 4회)
+   → 같은 PR 에서 중복 4개가 1개로 합쳐지는지가 판정이다
+4. 그다음 (B): 오늘 만든 코드로 **새 PR** 을 열고 그걸 리뷰시킨다
+   "PR 리뷰 시스템이 자기 자신의 코드를 리뷰한다" — 포폴 그림
+   ⚠️ 커밋 전에 `gh auth switch --user sml1323` (지금 활성은 **eslway**)
+```
+
+#### 📌 그리고 **픽스처가 3 → 8 로 늘었다** (사용자, 2026-08-29)
+
+```
+sec_command_injection.diff   subprocess.run(f"tar ... {name}", shell=True)
+sec_hardcoded_secret.diff    SLACK_TOKEN = "xoxb-..." 하드코딩
+sec_path_traversal.diff      UPLOAD_ROOT / filename  — ../../etc/passwd 로 탈출
+clean_refactor.diff          **결함 없음** (순수 리팩터링)
+clean_test_add.diff          **결함 없음** (테스트 추가)
+```
+
+**M6-3b 가 원리적으로 가능해졌다.** `evals/stats.py:min_two_sided_p` 로:
+```
+불일치 쌍 3 → p_min 0.250   어떤 결과도 유의 불가   ← 지금까지 막혀 있던 이유
+불일치 쌍 6 → p_min 0.031   ✅ 문턱 통과
+불일치 쌍 8 → p_min 0.0078
+```
+그리고 `clean_*` 둘이 **M6-3b 의 주 엔드포인트**(*"clean 픽스처에서 `must_not_appear`
+오탐이 난 판의 비율"*)의 재료다 — 그동안 clean 픽스처가 `sample` 하나뿐이었다.
+
+⚠️ **먼저 할 것 둘 (다음 세션):**
+1. **`fixtures/expected.yaml` 에 5개가 미등록이다.** grader 가 `exp[fixture]` 로 접근하므로
+   **`KeyError` 로 터진다.** 정답 선언이 없으면 자가 못 잰다 —
+   그 파일 맨 위 주석이 경고한 그 상황이다(*"짝이 눈에 보이는 자리가 이긴다"*).
+2. **`sec_hardcoded_secret.diff` 의 `SLACK_URL` 이 정의돼 있지 않다.** 의도한 부가 결함인지
+   실수인지 정해야 한다 — 모델이 지적할 텐데 정답지에 없으면 **오탐으로 찍힌다.**
+   `not_graded` 로 둘지 `must_catch` 에 넣을지가 판단이다.
+⚠️ `clean_*` 은 `must_catch` 가 비게 되는데, `all([]) == True` 라 **오탐만 없으면 통과**한다.
+   그게 틀린 건 아니지만 `sample` 의 통과와 **다른 양**이다 — `grader.py:RunGrade.caught`
+   주석이 같은 함정을 이미 적어뒀다. 표가 그 차이를 말해야 한다.
+
+---
+
+---
+
+### 0-a. **오늘 만든 것 — 배선이 이어졌다** (2026-08-29)
+
+**범위를 알고 넘었다.** `CLAUDE.md` 는 M8 을 지금 하지 말라고 하는데, 목표가 포폴로
+바뀌어서 ③워커와 ⑥게이트를 당겨왔다. `03-build-plan.md` 의 M7(RAG)은 **건너뛴 채**다.
+
+| 파일 | 무엇 | 상태 |
+|---|---|---|
+| `backend/github/client.py` | diff 읽기 · PR 코멘트 쓰기 · 확장자 필터 · 예산 자르기 | ✅ |
+| `backend/worker/runner.py` | ③ 큐 → diff → 엔진 → 게이트 → 게시 | ✅ |
+| `backend/queue/router.py` | `dequeue()` 추가 — **없었다**(워커가 없었으니까) | ✅ |
+| `backend/gate/decision.py` | ⑥ 게이트 + 코멘트 렌더링 | ✅ **TODO 채워짐** |
+| `scripts/demo_e2e.py` | end-to-end + `--calibrate` | ✅ |
+| `learning/notebooks/05-pipeline-trace.ipynb` | 관문 다섯 따라 읽기 · TODO 2개 | ✅ 검수 통과 |
+
+**첫 실행 (2026-08-29, `sml1323/pr_agent#2`, 82.4초 · API 4회)**
+```
+diff 509,615자 31파일 → 리뷰 17,940자 6파일 · 안 봄 25파일
+게이트: 자동 게시 7 · 사람 1 · 보류 0
+  🙋 review-evasion-attempt (critical, conf 1.00) → 사람에게   ← 규칙이 실전에서 오탐을 잡았다
+```
+
+#### ✅ 게이트 규칙 — **숫자가 아니라 목록이 됐다** (사용자 결정)
+
+여덟 마일스톤 미뤄온 `0.6` 이 열렸는데, **실측이 그 축을 죽였다.**
+
+```
+정탐 47건   최소 0.87 · 중앙 1.00 · 최대 1.00
+오탐  5건   최소 0.82 · 중앙 1.00 · 최대 1.00     ← 겹친다
+→ confidence >= 0.6 은 61/61 통과. 아무 일도 안 한다
+
+critical 전체      29건 · 오탐 4건
+evasion 을 빼면    19건 · 오탐 0건   ← 영상의 "critical→사람"은 틀린 축을 잘랐다
+
+category 별 오탐률
+  review-evasion-attempt  정탐  6 · 오탐 4  →  40%
+  sql-injection           정탐 24 · 오탐 0  →   0%
+  resource-leak           정탐 17 · 오탐 0  →   0%
+```
+
+**확정**: `review-evasion-attempt` → 무조건 사람 · 나머지 전부 자동 ·
+`failed_agents` 있어도 게시하되 코멘트에 명시 · `suppressed` 는 안 쓴다.
+근거와 되돌리는 조건 전부 `backend/gate/decision.py` 의 `decide()` 위 주석에.
+⚠️ **진짜 근거는 오탐률이 아니라 피해의 비대칭이다** — evasion 오탐은 공개 PR 에서
+   작성자를 "리뷰 회피자"로 모는 것이다.
+
+#### ✅ `normalize_category` 이사 — 저스트-인-타임이 실현됐다
+
+`evals/grader.py` → **`backend/agents/schema.py`** (grader 가 재수출).
+`aggregator.py` TODO ① 이 *"필요해지기 직전에 옮긴다"* 라고 미뤄둔 것을, 게이트가
+category 를 읽게 되면서 옮겼다. 의존 방향이 `evals/ → backend/` 한 방향이라
+게이트가 grader 를 import 할 수 없었다. **테스트 28개 통과 · 채점 결과 불변.**
+
+#### ⬜ 알고 남긴 것
+
+| | 무엇 | 왜 |
+|---|---|---|
+| `line` 이 틀린다 | 실측: sql-injection 정답 `:16` 인데 넷이 `:17 :17 :15 :17` | 그래서 **줄 단위가 아니라 PR 전체 코멘트**로 단다. `@@` 파서를 붙이면 줄 단위로 옮긴다 |
+| dedup 이 다른 이름을 못 합침 | 위 §0 의 그것 | **다음 한 걸음이 이걸 고친다** |
+| DB 안 붙임 | 컨테이너가 안 떠 있다(`127.0.0.1:5434` 접속 실패) | 포폴 데모에 안 보인다. 스키마 4개 + ADR 은 문서로 보여주는 게 낫다 |
+| M7 RAG 건너뜀 | 예산 상수(`MAX_DIFF_CHARS=20000`)로 버틴다 | PR #2 는 31파일 중 **25개를 안 본다.** 진짜 답은 검색이다 |
+| `--post` 안 해봄 | dry-run 까지만 확인 | ⚠️ **공개 PR 에 진짜 코멘트가 달린다.** 계정 전환 먼저 |
+
+---
+
+### 0-b. **학습 진입점 — M6 에서 비워둔 판단 자리 여덟** (2026-08-28)
 
 코드는 **지금 다 돌아간다.** 판단 자리마다 **잠정값**이 들어 있고, 주석에 후보·기준·
 틀리면 깨지는 것이 적혀 있다. 학습은 **그 잠정값을 뒤집어보는 것**이다.

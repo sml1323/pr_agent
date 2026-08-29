@@ -1,0 +1,17 @@
+diff --git a/api/backup.py b/api/backup.py
+index 2c1d8e3..5a9b7f4 100644
+--- a/api/backup.py
++++ b/api/backup.py
+@@ -4,6 +4,12 @@ import subprocess
+ BACKUP_DIR = "/var/backups"
+ 
+ 
++def archive_project(project_name):
++    cmd = f"tar -czf {BACKUP_DIR}/{project_name}.tar.gz /srv/{project_name}"
++    subprocess.run(cmd, shell=True, check=True)
++    return f"{BACKUP_DIR}/{project_name}.tar.gz"
++
++
+ def list_backups():
+     return subprocess.run(
+         ["ls", BACKUP_DIR], capture_output=True, text=True
