@@ -222,14 +222,27 @@ def render_comment(
             ]
 
     if d.to_human:
-        # ⚠️ **이 블록이 리뷰에서 지적받아 고쳐졌다** (2026-08-30, PR #3 자기 리뷰).
-        #    ① `misleading-documentation` (conf 1.00, docs 관점) —
-        #       원래 "확신이 낮거나 심각도가 높아"라고 적혀 있었는데 `decide()` 는
-        #       confidence·severity 를 **전혀 안 본다.** 게이트가 category 기반으로 바뀔 때
-        #       문구만 남아 **코멘트가 거짓말하고 있었다.**
-        #    ② `human-handoff` (conf 0.96) · `human-review-visibility` (conf 0.93) —
-        #       건수만 적어서 **사람이 무엇을 확인해야 하는지 알 수 없었다.**
-        #       "사람에게 넘긴다"가 실질적인 검토로 이어지지 않는다.
+        # 🔴 **이 블록이 두 번 고쳐졌다. 두 번째는 첫 번째 수정이 만든 사고 때문이다.**
+        #
+        # 1차 (2026-08-30) — 리뷰가 `human-handoff`(0.96)·`human-review-visibility`(0.93)로
+        #    *"건수만 적어서 사람이 무엇을 볼지 알 수 없다"* 를 지적했다. 맞는 말이라
+        #    `<details>` 로 파일·확신·rationale 을 펼쳐 넣었다.
+        #
+        # 2차 (2026-08-30, 같은 날) — **그 수정이 게이트를 정면으로 깼다.**
+        #    리뷰가 `human-only-finding-leak`(0.99, high)로 잡았다:
+        #      *"`decide()` 는 `to_human` 을 자동 게시하지 않도록 분류하지만
+        #        `render_comment()` 가 그 항목의 rationale 을 PR 코멘트에 그대로 렌더링한다.
+        #        특히 review-evasion 지적은 공개 PR 에서 작성자를 리뷰 회피자로 몰 수 있어
+        #        (…) 정책과 동작이 모순된다."*
+        #    실제로 유출됐다 — PR #3 에 evasion 3건이 `<details>` 안에 게시됐다.
+        #
+        # ⚠️ **두 지적이 서로 충돌한다. 둘 다 맞다.**
+        #    "사람에게 넘긴 걸 보여줘라" vs "사람에게 넘긴 건 공개하지 마라".
+        #    한 출구에서 둘을 만족할 수 없다 — **채널이 갈려야 한다.**
+        #      · 공개 코멘트(여기)  → 무엇이 보류됐는지 **종류와 건수만**
+        #      · 사람 큐(HITL, M8)  → 파일·rationale·확신 전부. `Decision.to_human` 이 재료
+        #    `docs/02-architecture.md` 의 사람 큐가 원래 그 자리다. 한 곳에 욱여넣은 게
+        #    이 사고의 원인이고, 그래서 여기서는 **상세를 절대 안 적는다.**
         cats = sorted({normalize_category(f["category"]) for f in d.to_human})
         lines += [
             "---",
@@ -237,18 +250,9 @@ def render_comment(
             f"`{'`, `'.join(cats)}` 는 오탐일 때의 피해가 커서 자동 게시하지 않습니다. "
             f"(확신·심각도로 거르지 않습니다.)",
             "",
+            "<sub>상세는 공개하지 않습니다 — 사람이 확인한 뒤 필요하면 별도로 전달됩니다.</sub>",
+            "",
         ]
-        for f in sorted(d.to_human, key=lambda x: SEVERITY_RANK[x["severity"]]):
-            srcs = ", ".join(f.get("sources", []))
-            lines += [
-                f"<details><summary>🙋 <code>{f['severity']}</code> · "
-                f"{f['category']} — {f['file']} (확신 {f['confidence']:.2f} · {srcs})</summary>",
-                "",
-                f["rationale"],
-                "",
-                "</details>",
-                "",
-            ]
 
     notes = []
     if failed_agents:
