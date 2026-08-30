@@ -78,6 +78,26 @@ def enqueue(payload: dict[str, Any]) -> None:
     _queue.append(payload)
 
 
+def dequeue() -> dict[str, Any] | None:
+    """잡 하나를 꺼낸다. 비었으면 None.
+
+    ⚠️ **이 스텁의 한계가 여기서 제일 크다.** 꺼내는 순간 큐에서 사라지므로,
+       워커가 처리 도중 죽으면 **그 잡은 영영 없어진다.** 진짜 브로커라면
+       ack 를 받을 때까지 "처리 중" 상태로 잡아두고, 타임아웃이면 되돌린다.
+       → M4 에서 Redis + ARQ 로 갈릴 때 그 반환(visibility timeout)이 같이 온다.
+
+    ⚠️ 그때까지 이 손실을 무엇이 막나 — **체크포인터다.** 엔진이 이미 돌기 시작했으면
+       `review_key` 로 `resume()` 할 수 있다 (Lesson 11). 잡은 잃어도 진행은 안 잃는다.
+       완전히 잃는 창은 "dequeue 직후 ~ engine.run 진입 전" 뿐이다.
+
+    FIFO 인 이유: PR 은 먼저 열린 것부터 리뷰하는 게 사람의 기대와 맞는다.
+    `pop(0)` 이 O(n) 인 건 알고 두는 것이다 — 이 리스트는 M4 까지만 산다.
+    """
+    if not _queue:
+        return None
+    return _queue.pop(0)
+
+
 def queue_depth() -> int:
     """큐에 쌓인 잡 수. 데모와 테스트가 '진짜 들어갔는지' 확인하는 창구다."""
     return len(_queue)

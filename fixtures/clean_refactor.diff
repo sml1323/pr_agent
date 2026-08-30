@@ -1,0 +1,24 @@
+diff --git a/api/orders.py b/api/orders.py
+index a1b2c3d..d4e5f6a 100644
+--- a/api/orders.py
++++ b/api/orders.py
+@@ -12,9 +12,16 @@ TAX_RATE = 0.1
+ 
+ 
+ def calculate_total(items):
+-    subtotal = sum(item["price"] * item["qty"] for item in items)
+-    tax = subtotal * TAX_RATE
+-    return subtotal + tax
++    subtotal = _subtotal(items)
++    return subtotal + _tax(subtotal)
++
++
++def _subtotal(items):
++    return sum(item["price"] * item["qty"] for item in items)
++
++
++def _tax(subtotal):
++    return subtotal * TAX_RATE
+ 
+ 
+ def format_receipt(order):
