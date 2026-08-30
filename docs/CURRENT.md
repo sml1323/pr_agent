@@ -549,6 +549,63 @@ rationale 이 넷 다 같은 말이다 — *"`checkpoints.sqlite` 가 상대 경
    (새 category 가 나오면 자가 빨간불 → 사람이 통에 넣는다, D2++)이 통째로 죽는다.
    `other` 가 그 신호를 살려두는 자리다.
 
+#### 📌 재료는 이미 다 모았다 (2026-08-30 브리핑) — **다시 재지 말 것**
+
+**실측 category ~27종인데, 뜯어보면 6개 개념의 변형이 18개다:**
+
+```
+체크포인트 경로 불안정   checkpoint-path-instability · checkpoint-path-stability
+                        checkpoint-persistence · unstable-storage-path        ← 4개
+diff 경로 파싱          diff-path-parsing · path-parsing                      ← 2개
+사람 전달 가시성        human-handoff · human-review-visibility               ← 2개
+잡 손실                job-loss · reliability-job-loss                        ← 2개
+게이트 미연결          integration-gap · unused-gate · missing-integration    ← 3개
+테스트 누락            missing-tests · missing-checkpoint-persistence-test
+                       missing-edge-case-test/-tests · missing-security-tests ← 5개
+```
+
+**진짜 개념은 ~15개인데 이름이 27개다.** 픽스처 실측 8종(`evals/runs`)은:
+`sql-injection` 24 · `resource-leak` 17 · `review-evasion-attempt` 10 · `syntax-error` 5 ·
+`missing-docstring` 2 · `missing-security-tests` 1 · `missing-edge-case-test(s)` 각 1
+
+#### ⬜ 정할 것 둘 (여기서 멈췄다)
+
+**갈림길 1 — 목록을 어디에 두나**
+
+| | 방법 | 대가 |
+|---|---|---|
+| (A) 프롬프트에만 | *"다음 중에서 골라라"* | 모델이 **안 지킬 수 있다.** 자유 문자열 그대로 |
+| (B) 스키마 `Literal` | 구조적으로 강제 | 목록 밖이 원리적으로 불가능. ⚠️ 체크포인트 호환 |
+| **(C) 둘 다** ← Claude 추천 | 프롬프트 + `Literal` | Lesson 01(*"부탁하지 말고 스키마로 강제"*)과 일관 |
+
+추천 근거: 이 레포가 같은 질문에 **세 번 같은 답**을 했다 —
+`security.py` 부팅 거부 · `base.py` 거부 시 예외 · `review_diff` 필수 인자.
+
+**갈림길 2 — 목록 초안 (17개 + other)**
+
+```
+보안   injection · hardcoded-secret · path-traversal · missing-validation
+       resource-exhaustion · review-evasion-attempt
+품질   resource-leak · error-handling · unstable-configuration
+       logic-error · dead-code · concurrency
+테스트  missing-test · weak-assertion
+문서   missing-docstring · misleading-documentation · unclear-naming
+기타   other
+```
+
+⚠️ **`other` 가 정보를 죽이지 않게 할 것.** `expected.yaml` D2++ 가 화이트리스트로 얻은 이득이
+*"모델이 처음 보는 category 를 뱉으면 자가 빨간불을 켠다"* 였는데 목록으로 조이면 `other` 로
+뭉개진다. **다만 `other` 가 나오는 것 자체가 같은 신호다** — 사람이 확인 → 목록에 추가.
+같은 루프가 돈다.
+
+⚠️ **`review-evasion-attempt` 는 목록에 반드시 남긴다.** 게이트의
+`HUMAN_ONLY_CATEGORIES` 가 그 문자열을 보고 있다 — 이름이 바뀌면 게이트가 뚫린다
+(PR #3 의 `policy-bypass` 지적이 정확히 그 한계를 짚었다).
+
+⚠️ **`demo_e2e.py` 가 결과를 파일로 안 남긴다.** 위 PR #2·#3 숫자는 채팅 출력에서 손으로
+모은 것이다. **before/after 를 제대로 비교하려면 저장을 붙여야 한다** —
+`evals/runs/` 와 같은 모양이면 `eval_prompt.py regrade` 가 그대로 재채점한다.
+
 #### 순서
 
 ```
